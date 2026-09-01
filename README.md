@@ -11,6 +11,10 @@
   O repositório é a primeira fase de um projeto do desenvolvimento de um jogo que irá funcionar na placa **De1-SoC**. Nessa fase foi desenvolvido um coprocessador gráfico em FPGA, feito na que será desenvolvido em verilog para suportar imagens, armazenar recursos gráficos e desenhar background, sprites e polígonos no VGA.
 
   O objetivo foi criar um processador gráfico para suportar a renderização visual de um protótipo do jogo Bomberman, que será desenvolvido em etapas futuras do projeto. O hardware foi desenvolvido em verilog para suportar imagens, armazenar recursos gráficos e desenhar background, sprites e polígonos no VGA
+  Recursos utilizados:
+  - Placa Terasic DE1-SoC Board
+  - Quartus Prime 25.1std.0 Lite Edition
+  - Verilog
 
 
 <details>
@@ -119,7 +123,7 @@ Endereço | Nome | Função
 <details>
 <summary>Barramentos</summary>
 Barramento | Tamanho | Descrição
-:---: | :--- | :---
+:---:|:---|:---
 Address | 16 | Barramento de endereçamento dos registradores internos
 Data In | 9 | Barramento de entrada de dados para configuração
 Control | 1 | Sinais de controle de escrita em memória
@@ -154,5 +158,97 @@ Este é o barramento de saída física do coprocessador.
 ## Testes
 <details>
 <summary>Testes</summary>
+ Para interagir com o coprocessador gráfico e realizar testes foram adicionados estados que simulam cenários de atuação do hardware e foram utilizados entradas da placa.
+ ### Entradas
+<details>
+<summary>Interface de demonstração</summary>
+
+ 
+- Key 0: Confirmar ação;
+- Key 1: Espelhamento horizontal e vertical;
+- Key 2: Mudar sprite/polígono selecionado;
+- Key 3: Reset global;
+- Sw 0-2: **Estados** de seleção dos elementos gráficos;
+- Sw 3-4: Muda cor do polígono;
+  - 00:
+  - 01:
+  - 10:
+  - 11:
+- Sw 5: Velocidade de movimento (1 é rápido);
+- Sw 6-9: Movimentação de elementos.
+  - Sw 6: Direita
+  - Sw 7: Esquerda
+  - Sw 8: Cima
+  - Sw 9: Baixo
+ 
+
+Cenários:
+
+- 000: Seleção do background;
+- 001: Seleção do Sprite;
+- 010: Permite o sprite se mover;
+- 011: Seleciona polígono;
+- 100: Buffer;
+- 101,110,111: Estímulo inválido.
+</details>
+
+## Movimentação de Background
+<details>
+ <summary>Cenário 000</summary>
+Entradas:
+
+- SW[2:0] = 000
+- KEY0
+- SW[5]
+- SW[9:8] e SW[7:6]
+
+Procedimento:
+
+1. Configurar SW[2:0] em 000.
+2. Pressionar KEY0 para ativar/desativar a movimentação contínua do background.
+3. Controlar o deslocamento horizontal com SW[9:8]:
+  - 00 ou 11 → imóvel
+  - demais combinações → esquerda / direita
+4. Controlar o deslocamento vertical com SW[7:6]:
+  - 00 ou 11 → imóvel
+  - demais combinações → cima / baixo
+5. Utilizar SW[5] para alterar a velocidade do scroll.
+  - 1 → rápido
+  - 2 → normal
+
+Saída:
+
+- Movimentação do plano de fundo (tilemap) nas direções horizontal e vertical.
+- Velocidade de deslocamento alterável via SW[5].
+- Parada do movimento quando as chaves de direção estão em 00 ou 11.
+</details>
+
+## Seleção, Confirmação e Espelhamento de Sprites
+<details>
+ <summary>Cenário 001</summary>
+ Entradas:
+
+- SW[2:0] = 001
+- SW[5] (0 = Horizontal / 1 = Vertical)
+- KEY2
+- KEY0
+- KEY1
+
+Procedimento:
+
+1. Configurar SW[2:0] em 001.
+2. Pressionar KEY2 repetidamente para alternar entre as sprites disponíveis.
+3. Após escolher a sprite desejada, pressionar KEY0 para confirmá-la.
+4. Pressionar KEY1 para aplicar o espelhamento da sprite confirmada, de acordo com o valor de SW[5]:
+  - SW[5] = 0 → espelhamento horizontal
+  - SW[5] = 1 → espelhamento vertical
+
+Saída:
+
+- Alternância visual entre as diferentes sprites disponíveis.
+- Confirmação e exibição da sprite selecionada na tela.
+- Espelhamento horizontal ou vertical da sprite confirmada conforme SW[5].
+</details>
+
  
 </details>
