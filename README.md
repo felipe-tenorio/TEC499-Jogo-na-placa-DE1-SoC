@@ -96,6 +96,9 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
 - **Driver VGA e Paleta:**
   Controla os tempos estritos de H-SYNC e V-SYNC para a saída 640x480. Puxa os dados resultantes do compositor e utiliza uma paleta programável para traduzir o índice de cor (8 bits) em um valor final de RGB (256 cores), enviado diretamente ao DAC e monitor através dos pinos da FPGA.
 </details>
+<hr>
+
+
 </details>
 
 ## Mapa de Registradores
@@ -118,7 +121,7 @@ Endereço | Nome | Função
 `0x08` | LAYER_ENABLE | Habilita independentemente as camadas (Background, Sprites, Polígonos).
 `0x0B` | SWAP_CTRL | Sinaliza o request para a troca de buffers (Double Buffering).
 `0x30` a `0x4F` | POLY_CONFIG | Atributos completos dos 4 slots de polígonos (Modo, Coordenadas dos Vértices e Cores).
-
+<hr>
 </details>
 
 ## Barramentos
@@ -156,6 +159,8 @@ Este é o barramento de saída física do coprocessador.
 
 - Cores (24 bits): Barramentos VGA_R, VGA_G e VGA_B, com 8 bits cada, carregando o valor da cor do pixel extraído da paleta.
 - Sincronismo (5 bits): Sincronismo horizontal (VGA_HS), vertical (VGA_VS), pulso de relógio para o DAC (VGA_CLK) e controles de período ativo (VGA_BLANK_N e VGA_SYNC_N).
+
+<hr>
 </details>
 
 ## Testes
@@ -345,6 +350,12 @@ Saída:
 **Saída esperada:**
 - Troca do plano de fundo exibido na tela.
 - Acionamento do **LED1** indicando a ativação do buffer.
+</details>
+<hr>
+
+### Testbenches
+<details> 
+ <summary>Testes e Script de automação</summary>
 </details>
  
 </details>
