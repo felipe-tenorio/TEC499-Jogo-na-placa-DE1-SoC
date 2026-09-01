@@ -122,8 +122,9 @@ Endereço | Nome | Função
 ## Barramentos
 <details>
 <summary>Barramentos</summary>
+ 
 Barramento | Tamanho | Descrição
-:---:|:---|:---
+:---: | :--- |:---
 Address | 16 | Barramento de endereçamento dos registradores internos
 Data In | 9 | Barramento de entrada de dados para configuração
 Control | 1 | Sinais de controle de escrita em memória
@@ -170,16 +171,16 @@ Este é o barramento de saída física do coprocessador.
 - Key 3: Reset global;
 - Sw 0-2: **Estados** de seleção dos elementos gráficos;
 - Sw 3-4: Muda cor do polígono;
-  - 00:
-  - 01:
-  - 10:
-  - 11:
+  - 00: vermelho
+  - 01: verde
+  - 10: azul
+  - 11: amarelo
 - Sw 5: Velocidade de movimento (1 é rápido);
 - Sw 6-9: Movimentação de elementos.
-  - Sw 6: Direita
-  - Sw 7: Esquerda
-  - Sw 8: Cima
-  - Sw 9: Baixo
+  - Sw 6: Cima
+  - Sw 7: Baixo
+  - Sw 8: Direita
+  - Sw 9: Esquerda
  
 
 Cenários:
@@ -226,7 +227,7 @@ Saída:
 ## Seleção, Confirmação e Espelhamento de Sprites
 <details>
  <summary>Cenário 001</summary>
- Entradas:
+ **Entradas:**
 
 - SW[2:0] = 001
 - SW[5] (0 = Horizontal / 1 = Vertical)
@@ -234,7 +235,7 @@ Saída:
 - KEY0
 - KEY1
 
-Procedimento:
+**Procedimento:**
 
 1. Configurar SW[2:0] em 001.
 2. Pressionar KEY2 repetidamente para alternar entre as sprites disponíveis.
@@ -243,12 +244,99 @@ Procedimento:
   - SW[5] = 0 → espelhamento horizontal
   - SW[5] = 1 → espelhamento vertical
 
-Saída:
+**Saída:**
 
 - Alternância visual entre as diferentes sprites disponíveis.
 - Confirmação e exibição da sprite selecionada na tela.
 - Espelhamento horizontal ou vertical da sprite confirmada conforme SW[5].
 </details>
 
+## Movimentação de Sprite
+<details>
+ <summary>Cenário 010</summary>
+ **Entradas:**
+
+- SW[2:0] = 010
+- SW[9:8] (esquerda / direita)
+- SW[7:6] (cima / baixo)
+- SW[5] (velocidade)
+
+**Procedimento:**
+
+1. Configurar SW[2:0] em 010.
+2. Utilizar as chaves de movimento da mesma do cenário de background:
+  - SW[9:8] → movimento horizontal (imóvel em 00 ou 11)
+  - SW[7:6] → movimento vertical (imóvel em 00 ou 11)
+3. Ajustar a velocidade com SW[5].
+**Observação:**
+
+- O movimento altera a última sprite confirmada no cenário 001.
+
+**Saída:**
+
+- Movimentação da sprite selecionada nas quatro direções.
+- Controle de velocidade via SW[5].
+- Parada do movimento quando as chaves de direção estão em 00 ou 11.
+</details>
+
+## Criação de Polígonos
+<details>
+ <summary>Cenário 011</summary>
+ **Entradas:**
+- SW[2:0] = 011
+- KEY2
+- KEY0
+- SW[9:6] (posição)
+- SW[4:3] (cor)
+
+**Procedimento:**
+1. Configurar SW[2:0] em 011.
+2. Pressionar KEY2 para alternar entre as possibilidades de polígonos disponíveis (retângulos e triângulos).
+3. Ajustar a posição do polígono com SW[9:6].
+4. Escolher a cor com SW[4:3].
+5. Pressionar KEY0 para confirmar e desenhar o polígono na tela.
+
+**Saída:**
+- Exibição de polígonos preenchidos (retângulos e/ou triângulos) na tela.
+- Posição e cor configuráveis pelas chaves.
+- Confirmação e rasterização correta após o acionamento de KEY0.
+</details>
+
+## Transparência e Prioridade
+<details>
+ <summary>Cenário 001</summary>
+**Entradas:**
+- SW[2:0] = 001 (modo de seleção de sprite)
+- KEY2, KEY0
+- SW[9:6] e SW[4:3] (para o polígono)
+- Criação de um polígono qualquer
+
+**Procedimento:**
+1. Entrar no cenário de sprites (SW[2:0] = 001).
+2. Pressionar KEY2 até selecionar o **sprite 4**.
+3. Pressionar KEY0 para confirmar a sprite.
+4. Criar um polígono qualquer na tela (utilizando o cenário de polígonos).
+5. Observar a sobreposição entre o sprite, o polígono e o background.
+
+**Saída:**
+- Demonstração de **transparência** (índice de cor 0).
+- **Prioridade** entre as camadas (Sprite > Polígono > Background).
+</details>
+
+## Troca de Background (Buffer)
+<details>
+ <summary>Cenário 100</summary>
+ **Entradas:**
+- SW[2:0] = 100
+- KEY0
+
+**Procedimento:**
+1. Configurar SW[2:0] em 100.
+2. Pressionar KEY0 para ativar a troca de buffer e realizar a troca do background.
+
+**Saída esperada:**
+- Troca do plano de fundo exibido na tela.
+- Acionamento do **LED1** indicando a ativação do buffer.
+</details>
  
 </details>
