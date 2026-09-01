@@ -40,11 +40,12 @@
 
 A arquitetura do co-processador é modular, isolando o controle, via de dados (datapath), memórias e a saída VGA. A composição da cena ocorre através do paralelismo de motores dedicados.
 
-## Registradores
+### Registradores
 <details>
 <summary>Banco de Registradores e Controle</summary>
 A interface principal de entrada do co-processador. Recebe comandos e instruçõess, armazenando as configurações de cena (coordenadas, cores, prioridades). Este módulo isola o barramento externo dos motores de renderização que operam no domínio de clock do pixel.
 </details>
+<hr>
 
 ### Motores Gráficos
 <details>
@@ -83,6 +84,7 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
 - **Rasterizador de Polígonos:**
   Permite o desenho de primitivas geométricas preenchidas utilizando aritmética inteira. É capaz de desenhar retângulos e triângulos, sendo útil para a criação de elementos de interface, obstáculos ou efeitos visuais na tela.
 </details>
+<hr>
 
 ### Compositor e Driver VGA
 <details>
@@ -192,8 +194,9 @@ Cenários:
 - 100: Buffer;
 - 101,110,111: Estímulo inválido.
 </details>
+<hr>
 
-## Movimentação de Background
+### Movimentação de Background
 <details>
  <summary>Cenário 000</summary>
 Entradas:
@@ -223,8 +226,9 @@ Saída:
 - Velocidade de deslocamento alterável via SW[5].
 - Parada do movimento quando as chaves de direção estão em 00 ou 11.
 </details>
+<hr>
 
-## Seleção, Confirmação e Espelhamento de Sprites
+### Seleção, Confirmação e Espelhamento de Sprites
 <details>
  <summary>Cenário 001</summary>
  **Entradas:**
@@ -250,8 +254,9 @@ Saída:
 - Confirmação e exibição da sprite selecionada na tela.
 - Espelhamento horizontal ou vertical da sprite confirmada conforme SW[5].
 </details>
+<hr>
 
-## Movimentação de Sprite
+### Movimentação de Sprite
 <details>
  <summary>Cenário 010</summary>
  **Entradas:**
@@ -278,8 +283,9 @@ Saída:
 - Controle de velocidade via SW[5].
 - Parada do movimento quando as chaves de direção estão em 00 ou 11.
 </details>
+<hr>
 
-## Criação de Polígonos
+### Criação de Polígonos
 <details>
  <summary>Cenário 011</summary>
  **Entradas:**
@@ -301,8 +307,9 @@ Saída:
 - Posição e cor configuráveis pelas chaves.
 - Confirmação e rasterização correta após o acionamento de KEY0.
 </details>
+<hr>
 
-## Transparência e Prioridade
+### Transparência e Prioridade
 <details>
  <summary>Cenário 001</summary>
 **Entradas:**
@@ -322,8 +329,9 @@ Saída:
 - Demonstração de **transparência** (índice de cor 0).
 - **Prioridade** entre as camadas (Sprite > Polígono > Background).
 </details>
+<hr>
 
-## Troca de Background (Buffer)
+### Troca de Background (Buffer)
 <details>
  <summary>Cenário 100</summary>
  **Entradas:**
