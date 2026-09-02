@@ -1,0 +1,29 @@
+// compositor.v
+// Prioridade fixa: sprite > poligono > background.
+//
+// ALTERACOES:
+//   - bg_valido como input wire (corrige declaracao anterior incorreta).
+//   - Cores ja em RRRGGGBB (modulo de paleta removido do caminho).
+//   - Indice/cor 0 = transparente em sprite e poligono.
+
+module compositor (
+    input  wire enable_bg, enable_sprite, enable_poly,
+    input  wire [7:0] cor_bg,
+    input  wire bg_valido,
+    input  wire [7:0] cor_poly,   input wire poly_ativo,
+    input  wire [7:0] cor_sprite, input wire sprite_ativo,
+    output reg  [7:0] cor_final
+);
+
+    always @(*) begin
+        if (enable_sprite && sprite_ativo && cor_sprite != 8'd0)
+            cor_final = cor_sprite;
+        else if (enable_poly && poly_ativo && cor_poly != 8'd0)
+            cor_final = cor_poly;
+        else if (enable_bg && bg_valido)
+            cor_final = cor_bg;
+        else
+            cor_final = 8'd0; // preto / transparente
+    end
+
+endmodule

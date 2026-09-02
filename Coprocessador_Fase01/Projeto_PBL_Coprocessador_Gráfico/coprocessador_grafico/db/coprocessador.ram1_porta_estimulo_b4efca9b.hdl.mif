@@ -1,0 +1,15 @@
+-- begin_signature
+-- porta_estimulo
+-- end_signature
+WIDTH=2;
+DEPTH=4;
+
+ADDRESS_RADIX=UNS;
+DATA_RADIX=BIN;
+
+CONTENT BEGIN
+	3 :	11;
+	2 :	01;
+	1 :	01;
+	0 :	01;
+END;
