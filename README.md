@@ -40,6 +40,17 @@
 
 A arquitetura do co-processador é modular, isolando o controle, via de dados (datapath), memórias e a saída VGA. A composição da cena ocorre através do paralelismo de motores dedicados.
 
+<div aling="center">
+ <figure>
+  <img src="Docs/Diagrama_coprocessador.jpg" width="700px"/>
+  <figcaption>
+   <p aling="center">
+    <b>Figura 1</b> - Diagrama do Coprocessador Gráfico
+   </p>
+  </figcaption>
+ </figure>
+</div>
+
 ### Registradores
 <details>
 <summary>Banco de Registradores e Controle</summary>
@@ -61,7 +72,7 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
     <img src="Docs/gif_back.gif" width="300px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 1</b> - Movimentação do Background
+        <b>Figura 2</b> - Movimentação do Background
       </p>
     </figcaption>
   </figure>
@@ -75,7 +86,7 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
     <img src="Docs/todos_sprites.jpeg" width="300px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 2</b> - 32 Sprites simultâneos no VGA
+        <b>Figura 3</b> - 32 Sprites simultâneos no VGA
       </p>
     </figcaption>
   </figure>
@@ -98,7 +109,7 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
     <img src="Docs/all_sprite_poli.jpeg" width="200px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 3</b> - Composição completa dos elementos gráficos 
+        <b>Figura 4</b> - Composição completa dos elementos gráficos 
       </p>
     </figcaption>
   </figure>
@@ -275,7 +286,7 @@ Saída:
     <img src="Docs/espelhamento.gif" width="200px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 4</b> - Espelhamento do sprite
+        <b>Figura 5</b> - Espelhamento do sprite
       </p>
     </figcaption>
   </figure>
@@ -362,7 +373,7 @@ Saída:
     <img src="transparencia.gif" width="200px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 5</b> - Transparência do sprite
+        <b>Figura 6</b> - Transparência do sprite
       </p>
     </figcaption>
   </figure>
@@ -391,7 +402,7 @@ Saída:
     <img src="Docs/buffer.gif" width="200px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 6</b> - Troca de background
+        <b>Figura 7</b> - Troca de background
       </p>
     </figcaption>
   </figure>
