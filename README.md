@@ -12,7 +12,7 @@
 
   O objetivo foi criar um processador gráfico para suportar a renderização visual de um protótipo do jogo Bomberman, que será desenvolvido em etapas futuras do projeto. O hardware foi desenvolvido em verilog para suportar imagens, armazenar recursos gráficos e desenhar background, sprites e polígonos no VGA
   Recursos utilizados:
-  - Placa Terasic DE1-SoC Board
+  - Placa Terasic DE1-SoC Board com FPGA Cyclone V 5CSEMA5F31C6
   - Quartus Prime 25.1std.0 Lite Edition
   - Verilog
 
@@ -421,14 +421,18 @@ Saída:
  O arquivo 'tb_coprocessador_top.v' integra a porta de estímulo, o banco de registradores e o compositor. Não possui os IPs de PLL e as RAMs. Os clocks de sistema e de pixel são gerados no próprio teste. Dentro dele, os cenários obrigatórios do problema (transparência, espelhamento, sobreposição, prioridade, troca de buffers e comandos inválidos) são testados em nível funcional.
 
  Além disso o projeto possui um script de automação (run_all_modelsim.do) que automatiza a execução dos testes. Ele tem como função compilar, executar e reportar os resultados de todos os 9 testes.
+
+ O projeto passou em todos os testbenches.
 </details>
  
 ## Conclusão
 <details>
  <summary>Resultados</summary>
+ 
  O projeto implementou o núcleo de um co-processador gráfico, atendendo aos requisitos do Problema #1 da disciplina de Sistemas Digitais. O sistema gera continuamente vídeo VGA em 640×480 pixels a partir de uma resolução lógica de 320×240, com suporte a plano de fundo baseado em tiles, sprites e rasterização de polígonos (retângulos e triângulos), utilizando uma paleta programável de 256 cores e transparência pelo índice 0.
  
 A arquitetura foi organizada de forma modular, com separação clara entre porta de estímulo, banco de registradores, motores gráficos (background, sprites e rasterizador), compositor e driver VGA.
 
-A verificação compreendeu testbenches unitários para os módulos principais, um testbench de integração do fluxo de comandos e testes de mesa na placa, cobrindo transparência, espelhamento, sobreposição, prioridade, troca de buffers e tratamento de comandos inválidos. Todos os testes demonstraram o funcionamento correto do hardware.
+A verificação compreendeu testbenches unitários para os módulos principais, um testbench de integração do fluxo de comandos e testes de mesa na placa, cobrindo transparência, espelhamento, sobreposição, prioridade, troca de buffers e tratamento de comandos inválidos. Todos os testes foram aprovados e demonstraram o funcionamento correto do hardware.
+
 </details>
