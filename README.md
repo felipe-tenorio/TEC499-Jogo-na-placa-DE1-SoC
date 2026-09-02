@@ -40,13 +40,13 @@
 
 A arquitetura do co-processador é modular, isolando o controle, via de dados (datapath), memórias e a saída VGA. A composição da cena ocorre através do paralelismo de motores dedicados.
 
-<div aling="center">
+<div align="center">
  <figure>
   <img src="Docs/Diagrama_coprocessador.jpg" width="700px"/>
   <figcaption>
-   <p aling="center">
-    <b>Figura 1</b> - Diagrama do Coprocessador Gráfico
-   </p>
+    <p align="center">
+     <b>Figura 1</b> - Diagrama do Coprocessador Gráfico
+    </p>
   </figcaption>
  </figure>
 </div>
