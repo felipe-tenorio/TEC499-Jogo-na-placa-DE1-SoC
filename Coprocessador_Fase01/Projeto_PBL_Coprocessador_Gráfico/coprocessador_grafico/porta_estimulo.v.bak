@@ -1,0 +1,519 @@
+// porta_estimulo.v
+// "Porta de estimulo" (versao de bancada V3, sem interface de comandos).
+// Le SW[9:0]/pulsos ja debounced de KEY[2:0] e traduz cada cenario em uma
+// pequena sequencia de escritas {wr_en, endereco[15:0], dado[8:0]} no banco
+// de registradores -- exatamente o mesmo contrato {wr_en,endereco,dado} que
+// a futura interface de comandos (MMIO) ira produzir. Nenhum modulo abaixo
+// do banco de registradores precisa mudar quando essa porta for substituida.
+//
+// ---------------------------------------------------------------------------
+// ALTERACOES (foco nesta versao):
+// 1. Cenario 0010: desenha UM poligono por vez (retangulo, triangulo
+//    retangulo, equilatero, isosceles ou escaleno) com posicao via SW.
+// 2. Background e habilitado automaticamente em todo KEY0 (exceto Idle e
+//    estimulo invalido) e permanece ligado entre testes.
+// 3. Cenario 0011: scroll continuo do background controlado por SW[9:8]
+//    (horizontal) e SW[7:6] (vertical) sem necessidade de KEY.
+// 4. Prioridade de camadas continua sendo definida pelo compositor.v
+//    (para poly > sprite > bg altere o compositor; a porta apenas controla
+//    os enables via 0x08).
+// 5. Cenario 0001: KEY0 apenas ativa/reconfigura um sprite de teste fixo
+//    (indice SPR_TESTE_MOVIMENTO); a partir dai, sua posicao se move de
+//    forma continua controlada por SW[9:5] -- exatamente como o scroll do
+//    background em 0011:
+//      SW[9:8] = direcao horizontal (01=esquerda, 10=direita, 00/11=parado)
+//      SW[7:6] = direcao vertical   (01=baixo,    10=cima,    00/11=parado)
+//      SW[5]   = velocidade (0=normal, 1=rapido)
+//    Como esses bits (SW[9:4]) antes selecionavam indice/padrao do sprite,
+//    o sprite de teste agora e fixo (mesma ideia ja usada nos cenarios de
+//    transparencia/prioridade/espelhamento, que tambem usam indices fixos).
+//
+// Mapa de cenarios (SW[3:0]):
+//   0000 Idle            - apaga camadas
+//   0001 Sprite movel (posicao continua via SW[9:5], ver acima)
+//   0010 Poligono individual (tipo + posicao via SW[9:4])
+//   0011 Background + scroll continuo (SW[9:8] H, SW[7:6] V)
+//   0100 Composicao completa (bg + sprite + poly)
+//   0101 Transparencia
+//   0110 Espelhamento
+//   0111 Sobreposicao de sprites
+//   1000 Prioridade (tabela)
+//   1001 Troca de buffers
+//   1010 Estimulo invalido
+//   1011 4 poligonos simultaneos
+//
+// Mapa de enderecos: ver cabecalho de banco_registradores.v
+// ---------------------------------------------------------------------------
+
+module porta_estimulo (
+    input  wire clk_sys, reset,
+    input  wire [9:0] SW,
+    input  wire pulso_key0, pulso_key1, pulso_key2,
+
+    output wire wr_en,
+    output wire [15:0] endereco,
+    output wire [8:0]  dado,   // 9 bits: cobre coordenadas logicas ate 319 (eixo X)
+    output reg  [3:0]  cenario_ativo,
+    output reg  estimulo_invalido
+);
+
+    wire [3:0] cenario = SW[3:0];
+    wire [5:0] aux     = SW[9:4];
+
+    // =====================================================================
+    // ROM fixa do cenario extra "4 poligonos simultaneos" (SW=1011)
+    // =====================================================================
+    reg signed [9:0] poly4_vx [0:3][0:2];
+    reg signed [9:0] poly4_vy [0:3][0:2];
+    reg [7:0]        poly4_cor [0:3];
+    reg [1:0]        poly4_ctrl [0:3]; // {modo_retangulo, habilitado}
+
+    initial begin
+        // slot 0 - triangulo equilatero (aprox.), vermelho
+        poly4_vx[0][0]=60;  poly4_vy[0][0]=20;
+        poly4_vx[0][1]=26;  poly4_vy[0][1]=80;
+        poly4_vx[0][2]=94;  poly4_vy[0][2]=80;
+        poly4_cor[0]=8'hE0; poly4_ctrl[0]=2'b01;
+
+        // slot 1 - triangulo isosceles, verde
+        poly4_vx[1][0]=200; poly4_vy[1][0]=20;
+        poly4_vx[1][1]=170; poly4_vy[1][1]=90;
+        poly4_vx[1][2]=230; poly4_vy[1][2]=90;
+        poly4_cor[1]=8'h18; poly4_ctrl[1]=2'b01;
+
+        // slot 2 - triangulo escaleno, azul/ciano
+        poly4_vx[2][0]=60;  poly4_vy[2][0]=150;
+        poly4_vx[2][1]=140; poly4_vy[2][1]=170;
+        poly4_vx[2][2]=90;  poly4_vy[2][2]=230;
+        poly4_cor[2]=8'h77; poly4_ctrl[2]=2'b01;
+
+        // slot 3 - retangulo (modo_retangulo=1)
+        poly4_vx[3][0]=200; poly4_vy[3][0]=140;
+        poly4_vx[3][1]=280; poly4_vy[3][1]=220;
+        poly4_vx[3][2]=0;   poly4_vy[3][2]=0;
+        poly4_cor[3]=8'h11; poly4_ctrl[3]=2'b11;
+    end
+
+    // =====================================================================
+    // ROM de poligonos individuais (cenario 0010)
+    // Tipos (SW[6:4] ou aux[2:0]):
+    //   000 = retangulo
+    //   001 = triangulo retangulo
+    //   010 = triangulo equilatero
+    //   011 = triangulo isosceles
+    //   100 = triangulo escaleno
+    // Posicao base (offset): SW[9:7] = aux[5:3]  (passos de 32 em X, 16 em Y)
+    // =====================================================================
+    reg signed [9:0] poly1_vx [0:4][0:2];
+    reg signed [9:0] poly1_vy [0:4][0:2];
+    reg [7:0]        poly1_cor [0:4];
+    reg [1:0]        poly1_ctrl[0:4]; // {modo_retangulo, habilitado}
+
+    initial begin
+        // 0 - retangulo (v0 = sup-esq, v1 = inf-dir)
+        poly1_vx[0][0]=20;  poly1_vy[0][0]=20;
+        poly1_vx[0][1]=90;  poly1_vy[0][1]=70;
+        poly1_vx[0][2]=0;   poly1_vy[0][2]=0;
+        poly1_cor[0]=8'hE0; poly1_ctrl[0]=2'b11;
+
+        // 1 - triangulo retangulo
+        poly1_vx[1][0]=20;  poly1_vy[1][0]=20;
+        poly1_vx[1][1]=20;  poly1_vy[1][1]=90;
+        poly1_vx[1][2]=100; poly1_vy[1][2]=90;
+        poly1_cor[1]=8'h1C; poly1_ctrl[1]=2'b01;
+
+        // 2 - triangulo equilatero (aprox.)
+        poly1_vx[2][0]=60;  poly1_vy[2][0]=20;
+        poly1_vx[2][1]=20;  poly1_vy[2][1]=90;
+        poly1_vx[2][2]=100; poly1_vy[2][2]=90;
+        poly1_cor[2]=8'h03; poly1_ctrl[2]=2'b01;
+
+        // 3 - triangulo isosceles
+        poly1_vx[3][0]=60;  poly1_vy[3][0]=20;
+        poly1_vx[3][1]=25;  poly1_vy[3][1]=100;
+        poly1_vx[3][2]=95;  poly1_vy[3][2]=100;
+        poly1_cor[3]=8'hFC; poly1_ctrl[3]=2'b01;
+
+        // 4 - triangulo escaleno
+        poly1_vx[4][0]=20;  poly1_vy[4][0]=30;
+        poly1_vx[4][1]=110; poly1_vy[4][1]=50;
+        poly1_vx[4][2]=50;  poly1_vy[4][2]=110;
+        poly1_cor[4]=8'h77; poly1_ctrl[4]=2'b01;
+    end
+
+    // ---- ROM fixa da tabela de prioridade (cenario 1000) ----
+    reg       pri_spr_en [0:4];
+    reg       pri_poly_en [0:4];
+    reg [7:0] pri_poly_cor [0:4];
+    initial begin
+        pri_spr_en[0]=1; pri_poly_en[0]=1; pri_poly_cor[0]=8'd9;
+        pri_spr_en[1]=0; pri_poly_en[1]=1; pri_poly_cor[1]=8'd9;
+        pri_spr_en[2]=0; pri_poly_en[2]=0; pri_poly_cor[2]=8'd0;
+        pri_spr_en[3]=1; pri_poly_en[3]=1; pri_poly_cor[3]=8'd9;
+        pri_spr_en[4]=1; pri_poly_en[4]=1; pri_poly_cor[4]=8'd0;
+    end
+    reg [2:0] caso_prioridade;
+
+    localparam SPR_TESTE_PRIORIDADE = 5'd31;
+    localparam SPR_TESTE_TRANSP     = 5'd30;
+    localparam SPR_TESTE_ESPELHO    = 5'd29;
+    localparam SPR_TESTE_MOVIMENTO  = 5'd26; // sprite de teste do cenario 0001
+
+    reg ovr_pri_toggle;
+
+    // =====================================================================
+    // Maquina de estados principal (sequencias disparadas por KEY)
+    // =====================================================================
+    localparam IDLE = 2'd0, REPROD = 2'd1;
+    reg [1:0] estado;
+    reg [5:0] passo;
+    reg [5:0] passo_max;
+    reg [3:0] cen_lat;
+    reg [5:0] aux_lat;
+
+    localparam SPRITE_X_INIT = 9'd150;
+    localparam SPRITE_Y_INIT = 9'd100;
+
+    // =====================================================================
+    // Scroll continuo do background (cenario 0011) e movimentacao continua
+    // do sprite de teste (cenario 0001), agora feitos por mov_continuo.v
+    // (um modulo generico) em vez de dois blocos praticamente identicos
+    // duplicados aqui dentro.
+    //
+    // `ativo` de cada instancia so fica em 1 quando o cenario correspondente
+    // esta selecionado E a maquina de sequencias principal esta em IDLE --
+    // exatamente a mesma condicao usada antes -- para nunca escrever no
+    // barramento ao mesmo tempo que a sequencia REPROD.
+    //
+    // `reinit` e pulsado no EXATO ciclo em que a sequencia REPROD grava o
+    // valor inicial no registrador real (scroll=0 no passo 1 do cenario
+    // 0011; SPRITE_X_INIT no passo 3 do cenario 0001), para que a copia
+    // interna (x_local/y_local) de cada mov_continuo comece realinhada com
+    // o registrador de verdade -- sem isso, o primeiro passo do movimento
+    // continuo partiria do valor antigo (residual do teste anterior) e nao
+    // do valor recem-escrito, causando um "salto"/contagem errada logo ao
+    // reativar o cenario.
+    // =====================================================================
+    wire reinit_scroll = (estado == REPROD) && (cen_lat == 4'b0011) && (passo == 6'd1);
+    wire reinit_sprite = (estado == REPROD) && (cen_lat == 4'b0001) && (passo == 6'd3);
+
+    wire wr_en_scroll;
+    wire [15:0] endereco_scroll;
+    wire [8:0]  dado_scroll;
+
+    mov_continuo #(
+        .WIDTH(8), .X_INIT(8'sd0), .Y_INIT(8'sd0),
+        .PERIODO_NORMAL(20'd100000), .DIV_RAPIDO(2)
+    ) u_scroll_bg (
+        .clk_sys(clk_sys), .reset(reset),
+        .ativo(cenario == 4'b0011 && estado == IDLE),
+        .reinit(reinit_scroll),
+        .dir_h(SW[9:8]), .dir_v(SW[7:6]), .veloc_rapida(1'b0),
+        .end_x(16'h0001), .end_y(16'h0002),
+        .wr_en(wr_en_scroll), .endereco(endereco_scroll), .dado(dado_scroll),
+        .x_local(), .y_local()
+    );
+
+    wire wr_en_sprite_mv;
+    wire [15:0] endereco_sprite_mv;
+    wire [8:0]  dado_sprite_mv;
+
+    mov_continuo #(
+        .WIDTH(9), .X_INIT(SPRITE_X_INIT), .Y_INIT(SPRITE_Y_INIT),
+        .PERIODO_NORMAL(20'd100000), .DIV_RAPIDO(2)
+    ) u_move_sprite (
+        .clk_sys(clk_sys), .reset(reset),
+        .ativo(cenario == 4'b0001 && estado == IDLE),
+        .reinit(reinit_sprite),
+        .dir_h(SW[9:8]), .dir_v(SW[7:6]), .veloc_rapida(SW[5]),
+        .end_x(16'h0004), .end_y(16'h0005),
+        .wr_en(wr_en_sprite_mv), .endereco(endereco_sprite_mv), .dado(dado_sprite_mv),
+        .x_local(), .y_local()
+    );
+
+    // ---- Mux de prioridade do barramento compartilhado ----
+    // A sequencia REPROD (sequenciador de passos) tem prioridade; scroll e
+    // movimento de sprite so escrevem quando o sequenciador nao esta
+    // escrevendo neste ciclo -- mutuamente exclusivo por construcao (cada
+    // um so fica ativo com um cenario/estado diferente), entao a prioridade
+    // aqui e so uma garantia extra contra corrida no ciclo de transicao.
+    reg wr_en_seq;
+    reg [15:0] endereco_seq;
+    reg [8:0]  dado_seq;
+
+    assign wr_en    = wr_en_seq    ? 1'b1           : (wr_en_scroll ? 1'b1 : wr_en_sprite_mv);
+    assign endereco = wr_en_seq    ? endereco_seq   : (wr_en_scroll ? endereco_scroll : endereco_sprite_mv);
+    assign dado     = wr_en_seq    ? dado_seq       : (wr_en_scroll ? dado_scroll     : dado_sprite_mv);
+
+    always @(posedge clk_sys) begin
+        if (reset) begin
+            wr_en_seq          <= 1'b0;
+            endereco_seq       <= 16'd0;
+            dado_seq           <= 9'd0;
+            cenario_ativo      <= 4'd0;
+            estimulo_invalido  <= 1'b0;
+            estado             <= IDLE;
+            passo              <= 6'd0;
+            passo_max          <= 6'd0;
+            caso_prioridade    <= 3'd0;
+            ovr_pri_toggle     <= 1'b0;
+        end else begin
+            // default: nenhuma escrita
+            wr_en_seq         <= 1'b0;
+            estimulo_invalido <= 1'b0;
+            cenario_ativo     <= cenario;
+
+            // ----------------------------------------------------------------
+            // Estimulo invalido (1010): nunca escreve
+            // ----------------------------------------------------------------
+            if (cenario == 4'b1010) begin
+                estimulo_invalido <= 1'b1;
+                estado            <= IDLE;
+            end else begin
+
+                // ============================================================
+                // Maquina de sequencias (KEY0 / KEY1)
+                // ============================================================
+                case (estado)
+
+                    IDLE: begin
+                        // KEY0 (ou KEY1 no cenario de sobreposicao) dispara
+                        if (pulso_key0 || (cenario == 4'b0111 && pulso_key1)) begin
+                            cen_lat <= cenario;
+                            aux_lat <= aux;
+
+                            if (cenario == 4'b0111 && pulso_key1 && !pulso_key0)
+                                ovr_pri_toggle <= ~ovr_pri_toggle;
+
+                            if (cenario == 4'b1000 && pulso_key0)
+                                caso_prioridade <= (caso_prioridade == 3'd4) ?
+                                                   3'd0 : caso_prioridade + 3'd1;
+
+                            // define quantos passos a sequencia tera
+                            case (cenario)
+                                4'b0000: passo_max <= 6'd1;   // idle: apaga camadas
+                                4'b0001: passo_max <= 6'd6;   // sprite movel: sel+padrao+flags+X+Y+layer
+                                4'b0010: passo_max <= 6'd10;  // 1 poligono (8 campos + enable + bg)
+                                4'b0011: passo_max <= 6'd2;   // habilita bg (+ scroll ja corre)
+                                4'b0100: passo_max <= 6'd1;   // composicao completa
+                                4'b0101: passo_max <= 6'd5;   // transparencia + bg
+                                4'b0110: passo_max <= 6'd1;   // espelhamento
+                                4'b0111: passo_max <= 6'd12;  // sobreposicao + bg
+                                4'b1000: passo_max <= 6'd10;  // prioridade + bg
+                                4'b1001: passo_max <= 6'd1;   // troca de buffers
+                                4'b1011: passo_max <= 6'd33;  // 4 poligonos + enable com bg
+                                default: passo_max <= 6'd0;
+                            endcase
+
+                            passo  <= 6'd0;
+                            estado <= REPROD;
+                        end
+                    end
+
+                    REPROD: begin
+                        if (passo < passo_max) begin
+                            wr_en_seq <= 1'b1;
+
+                            case (cen_lat)
+
+                                // ---- 0000 Idle: apaga as 3 camadas ----
+                                4'b0000: begin
+                                    endereco_seq <= 16'h0008;
+                                    dado_seq     <= 9'h00;
+                                end
+
+                                // ---- 0001 Sprite movel (+ bg sempre ligado) ----
+                                // Ativa/reconfigura um sprite de teste fixo em
+                                // posicao inicial; o movimento continuo por
+                                // SW[9:5] assume a partir dai (bloco acima).
+                                4'b0001: case (passo)
+                                    6'd0: begin endereco_seq<=16'h0003; dado_seq<={4'b0,SPR_TESTE_MOVIMENTO}; end
+                                    6'd1: begin endereco_seq<=16'h0007; dado_seq<=9'd0; end             // padrao 0
+                                    6'd2: begin endereco_seq<=16'h0006; dado_seq<=9'b0_0000_0100; end   // enable=1
+                                    6'd3: begin
+                                        // reinit_sprite (pulsado neste exato passo, ver
+                                        // instanciacao de u_move_sprite acima) realinha
+                                        // a copia interna do mov_continuo com este valor
+                                        endereco_seq <= 16'h0004;
+                                        dado_seq     <= SPRITE_X_INIT;
+                                    end
+                                    6'd4: begin
+                                        endereco_seq <= 16'h0005;
+                                        dado_seq     <= SPRITE_Y_INIT;
+                                    end
+                                    6'd5: begin endereco_seq<=16'h0008; dado_seq<=9'b011; end           // sprite+bg
+                                endcase
+
+                                // ---- 0010 Poligono individual ----
+                                // aux_lat[2:0] = tipo (0..4)
+                                // aux_lat[5:3] = offset de posicao
+                                4'b0010: begin
+                                    // calcula offset
+                                    // X_off = aux[5:3] * 32 ; Y_off = aux[5:3] * 16
+                                    // (usa o mesmo campo para simplicidade)
+                                    case (passo)
+                                        6'd0: begin // v0x
+                                            endereco_seq <= 16'h0030;
+                                            dado_seq <= poly1_vx[aux_lat[2:0]][0]
+                                                    + {4'b0, aux_lat[5:3], 5'b0}; // *32
+                                        end
+                                        6'd1: begin // v0y
+                                            endereco_seq <= 16'h0031;
+                                            dado_seq <= poly1_vy[aux_lat[2:0]][0]
+                                                    + {5'b0, aux_lat[5:3], 4'b0}; // *16
+                                        end
+                                        6'd2: begin // v1x
+                                            endereco_seq <= 16'h0032;
+                                            dado_seq <= poly1_vx[aux_lat[2:0]][1]
+                                                    + {4'b0, aux_lat[5:3], 5'b0};
+                                        end
+                                        6'd3: begin // v1y
+                                            endereco_seq <= 16'h0033;
+                                            dado_seq <= poly1_vy[aux_lat[2:0]][1]
+                                                    + {5'b0, aux_lat[5:3], 4'b0};
+                                        end
+                                        6'd4: begin // v2x
+                                            endereco_seq <= 16'h0034;
+                                            dado_seq <= poly1_vx[aux_lat[2:0]][2]
+                                                    + {4'b0, aux_lat[5:3], 5'b0};
+                                        end
+                                        6'd5: begin // v2y
+                                            endereco_seq <= 16'h0035;
+                                            dado_seq <= poly1_vy[aux_lat[2:0]][2]
+                                                    + {5'b0, aux_lat[5:3], 4'b0};
+                                        end
+                                        6'd6: begin // cor
+                                            endereco_seq <= 16'h0036;
+                                            dado_seq     <= {1'b0, poly1_cor[aux_lat[2:0]]};
+                                        end
+                                        6'd7: begin // ctrl
+                                            endereco_seq <= 16'h0037;
+                                            dado_seq     <= {7'b0, poly1_ctrl[aux_lat[2:0]]};
+                                        end
+                                        // desabilita os outros 3 slots para garantir so 1 poligono
+                                        6'd8: begin
+                                            endereco_seq <= 16'h003F; // POLY1 CTRL
+                                            dado_seq     <= 9'd0;
+                                        end
+                                        6'd9: begin
+                                            // LAYER_ENABLE = poly + bg (bit2 + bit0)
+                                            endereco_seq <= 16'h0008;
+                                            dado_seq     <= 9'b101;
+                                        end
+                                    endcase
+                                end
+
+                                // ---- 0011 Background + scroll continuo ----
+                                // KEY0 apenas habilita a camada; o movimento e automatico
+                                4'b0011: case (passo)
+                                    6'd0: begin
+                                        endereco_seq <= 16'h0008;
+                                        dado_seq     <= 9'b001; // so bg
+                                    end
+                                    6'd1: begin
+                                        // zera scroll ao iniciar o cenario; reinit_scroll
+                                        // (pulsado neste exato passo, ver instanciacao de
+                                        // u_scroll_bg acima) realinha a copia interna do
+                                        // mov_continuo com este valor
+                                        endereco_seq <= 16'h0001;
+                                        dado_seq     <= 9'd0;
+                                    end
+                                endcase
+
+                                // ---- 0100 Composicao completa ----
+                                4'b0100: begin
+                                    endereco_seq <= 16'h0008;
+                                    dado_seq     <= 9'b111; // poly + sprite + bg
+                                end
+
+                                // ---- 0101 Transparencia ----
+                                4'b0101: case (passo)
+                                    6'd0: begin endereco_seq<=16'h0003; dado_seq<={4'b0,SPR_TESTE_TRANSP}; end
+                                    6'd1: begin endereco_seq<=16'h0007; dado_seq<=9'd30; end
+                                    6'd2: begin endereco_seq<=16'h0006; dado_seq<=9'b0_0000_0100; end
+                                    6'd3: begin endereco_seq<=16'h0004; dado_seq<=9'd100; end
+                                    6'd4: begin endereco_seq<=16'h0008; dado_seq<=9'b011; end // sprite+bg
+                                endcase
+
+                                // ---- 0110 Espelhamento ----
+                                4'b0110: begin
+                                    endereco_seq <= 16'h0020;
+                                    dado_seq     <= {7'd0, aux_lat[1:0]};
+                                end
+
+                                // ---- 0111 Sobreposicao de sprites ----
+                                4'b0111: case (passo)
+                                    6'd0:  begin endereco_seq<=16'h0003; dado_seq<=9'd27; end
+                                    6'd1:  begin endereco_seq<=16'h0004; dado_seq<=9'd100; end
+                                    6'd2:  begin endereco_seq<=16'h0005; dado_seq<=9'd100; end
+                                    6'd3:  begin endereco_seq<=16'h0007; dado_seq<=9'd24; end
+                                    6'd4:  begin endereco_seq<=16'h0006; dado_seq<=9'b0_0000_0100; end
+                                    6'd5:  begin endereco_seq<=16'h0003; dado_seq<=9'd28; end
+                                    6'd6:  begin endereco_seq<=16'h0004; dado_seq<=9'd100 + {3'b0,aux_lat}; end
+                                    6'd7:  begin endereco_seq<=16'h0005; dado_seq<=9'd100; end
+                                    6'd8:  begin endereco_seq<=16'h0007; dado_seq<=9'd23; end
+                                    6'd9:  begin endereco_seq<=16'h0006;
+                                                 dado_seq<={ovr_pri_toggle?3'd1:3'd0, 1'b1, 2'b00}; end
+                                    6'd10: begin endereco_seq<=16'h0008; dado_seq<=9'b011; end // sprite+bg
+                                    6'd11: begin endereco_seq<=16'h0005; dado_seq<=9'd100; end // Y redundante
+                                endcase
+
+                                // ---- 1000 Prioridade (tabela) ----
+                                4'b1000: case (passo)
+                                    6'd0: begin endereco_seq<=16'h0003; dado_seq<={4'b0,SPR_TESTE_PRIORIDADE}; end
+                                    6'd1: begin endereco_seq<=16'h0007; dado_seq<=9'd31; end
+                                    6'd2: begin endereco_seq<=16'h0006;
+                                                dado_seq<={4'b0, pri_spr_en[caso_prioridade], 2'b0}; end
+                                    6'd3: begin endereco_seq<=16'h0030; dado_seq<=9'd10; end
+                                    6'd4: begin endereco_seq<=16'h0031; dado_seq<=9'd10; end
+                                    6'd5: begin endereco_seq<=16'h0032; dado_seq<=9'd40; end
+                                    6'd6: begin endereco_seq<=16'h0033; dado_seq<=9'd40; end
+                                    6'd7: begin endereco_seq<=16'h0036; dado_seq<={1'b0,pri_poly_cor[caso_prioridade]}; end
+                                    6'd8: begin endereco_seq<=16'h0037;
+                                                dado_seq<={7'b0, 1'b1, pri_poly_en[caso_prioridade]}; end
+                                    6'd9: begin endereco_seq<=16'h0008; dado_seq<=9'b111; end // tudo ligado
+                                endcase
+
+                                // ---- 1001 Troca de buffers ----
+                                4'b1001: begin
+                                    endereco_seq <= 16'h000B;
+                                    dado_seq     <= 9'd1;
+                                end
+
+                                // ---- 1011 4 poligonos (+ bg no final) ----
+                                4'b1011: begin
+                                    if (passo < 6'd32) begin
+                                        endereco_seq <= 16'h0030 + {passo[4:3], 3'd0} + passo[2:0];
+                                        case (passo[2:0])
+                                            3'd0: dado_seq <= poly4_vx[passo[4:3]][0];
+                                            3'd1: dado_seq <= poly4_vy[passo[4:3]][0];
+                                            3'd2: dado_seq <= poly4_vx[passo[4:3]][1];
+                                            3'd3: dado_seq <= poly4_vy[passo[4:3]][1];
+                                            3'd4: dado_seq <= poly4_vx[passo[4:3]][2];
+                                            3'd5: dado_seq <= poly4_vy[passo[4:3]][2];
+                                            3'd6: dado_seq <= {1'b0, poly4_cor[passo[4:3]]};
+                                            3'd7: dado_seq <= {7'b0, poly4_ctrl[passo[4:3]]};
+                                        endcase
+                                    end else begin
+                                        // passo 32: LAYER_ENABLE = poly + bg
+                                        endereco_seq <= 16'h0008;
+                                        dado_seq     <= 9'b101;
+                                    end
+                                end
+
+                                default: wr_en_seq <= 1'b0;
+                            endcase
+
+                            passo <= passo + 6'd1;
+                        end else begin
+                            estado <= IDLE;
+                        end
+                    end
+
+                    default: estado <= IDLE;
+                endcase
+            end
+        end
+    end
+
+endmodule

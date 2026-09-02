@@ -1,0 +1,435 @@
+module coprocessador (
+    input  wire CLOCK_50,
+    input  wire [9:0] SW,
+    input  wire [3:0] KEY,
+    output wire [7:0] VGA_R, VGA_G, VGA_B,
+    output wire VGA_HS, VGA_VS, VGA_CLK, VGA_BLANK_N, VGA_SYNC_N,
+    output wire [9:0] LEDR
+);
+
+    // Clocks e reset
+    wire reset = ~KEY[3] | ~pll_locked | ~pll_locked_100;
+    wire clk_pix, pll_locked;
+
+    meu_pll u_pll (
+        .refclk(CLOCK_50),
+        .outclk_0(clk_pix),
+        .locked(pll_locked)
+    );
+
+    wire clk_pll_100, pll_locked_100;
+
+    pllpara100 pllmhz (
+        .refclk(CLOCK_50),
+        .rst(~KEY[3]),
+        .outclk_0(clk_pll_100),
+        .locked(pll_locked_100)
+    );
+
+    // Debounce dos botoes
+    wire p_key0, p_key1, p_key2;
+    debounce_edge u_db0 (.clk(CLOCK_50), .reset(reset), .tecla_bruta(KEY[0]), .pulso(p_key0));
+    debounce_edge u_db1 (.clk(CLOCK_50), .reset(reset), .tecla_bruta(KEY[1]), .pulso(p_key1));
+    debounce_edge u_db2 (.clk(CLOCK_50), .reset(reset), .tecla_bruta(KEY[2]), .pulso(p_key2));
+
+    // Porta de estimulo -> Banco de registradores
+    wire wr_en_regs;
+    wire [15:0] endereco_regs;
+    wire [8:0]  dado_regs;
+    wire [3:0]  cenario_ativo;
+    wire estimulo_invalido;
+
+    porta_estimulo u_estimulo (
+        .clk_sys(CLOCK_50),
+        .reset(reset),
+        .SW(SW),
+        .pulso_key0(p_key0),
+        .pulso_key1(p_key1),
+        .pulso_key2(p_key2),
+        .wr_en(wr_en_regs),
+        .endereco(endereco_regs),
+        .dado(dado_regs),
+        .cenario_ativo(cenario_ativo),
+        .estimulo_invalido(estimulo_invalido)
+    );
+
+    wire [7:0] bg_scroll_x, bg_scroll_y;
+    wire [4:0] sprite_sel;
+
+    wire [8:0] sprite_x       [0:31];
+    wire [8:0] sprite_y       [0:31];
+    wire [4:0] sprite_padrao  [0:31];
+    wire       sprite_en      [0:31];
+    wire [2:0] sprite_pri     [0:31];
+    wire       sprite_fliph   [0:31];
+    wire       sprite_flipv   [0:31];
+
+    wire enable_bg, enable_sprite, enable_poly;
+
+    wire [8:0] ovr_spr1_x;
+    wire ovr_prioridade;
+    wire swap_request;
+
+    wire signed [9:0] poly_vx [0:3][0:2];
+    wire signed [9:0] poly_vy [0:3][0:2];
+    wire [7:0] poly_cor [0:3];
+    wire poly_habilitado [0:3];
+    wire poly_modo_retangulo [0:3];
+    wire [7:0] status;
+    wire endereco_invalido;
+
+    banco_registradores u_regs (
+        .clk_sys(clk_pll_100),
+        .reset(reset),
+        .wr_en(wr_en_regs),
+        .endereco(endereco_regs),
+        .dado_in(dado_regs),
+        .bg_scroll_x(bg_scroll_x),
+        .bg_scroll_y(bg_scroll_y),
+        .sprite_sel(sprite_sel),
+        .sprite_x(sprite_x),
+        .sprite_y(sprite_y),
+        .sprite_padrao(sprite_padrao),
+        .sprite_en(sprite_en),
+        .sprite_pri(sprite_pri),
+        .sprite_fliph(sprite_fliph),
+        .sprite_flipv(sprite_flipv),
+        .enable_bg(enable_bg),
+        .enable_sprite(enable_sprite),
+        .enable_poly(enable_poly),
+        .ovr_spr1_x(ovr_spr1_x),
+        .ovr_prioridade(ovr_prioridade),
+        .swap_request(swap_request),
+        .poly_vx(poly_vx),
+        .poly_vy(poly_vy),
+        .poly_cor(poly_cor),
+        .poly_habilitado(poly_habilitado),
+        .poly_modo_retangulo(poly_modo_retangulo),
+        .status(status),
+        .estimulo_invalido(estimulo_invalido),
+        .buffer_pronto(pll_locked_100),
+        .endereco_invalido(endereco_invalido)
+    );
+
+    // ---------------------------------------------------------------
+    // Memorias internas
+    // ---------------------------------------------------------------
+    wire [10:0] tilemap_addr;
+    wire [7:0]  tilemap_data_a, tilemap_data_b, tilemap_data;
+
+    // Leitura das tilemaps em clk_pix (mesmo domínio dos motores).
+    // Escrita permanece em clk_pll_100 (só usada na inicialização, we=0).
+    ram_sdp_mif #(.WIDTH(8), .DEPTH(1200), .ADDR(11),
+                  .MIFFILE("tilemap_a.mif"), .HEXFILE("tilemap_a.hex"))
+        u_tilemap_a (
+            .clk_wr(clk_pll_100), .we(1'b0), .addr_wr(11'd0), .data_in(8'd0),
+            .clk_rd(clk_pix), .addr_rd(tilemap_addr), .data_out(tilemap_data_a)
+        );
+
+    ram_sdp_mif #(.WIDTH(8), .DEPTH(1200), .ADDR(11),
+                  .MIFFILE("tilemap_b.mif"), .HEXFILE("tilemap_b.hex"))
+        u_tilemap_b (
+            .clk_wr(clk_pll_100), .we(1'b0), .addr_wr(11'd0), .data_in(8'd0),
+            .clk_rd(clk_pix), .addr_rd(tilemap_addr), .data_out(tilemap_data_b)
+        );
+
+    // ----------------------------------------------------------------
+    // Tudo o que depende de vsync e alimenta os motores gráficos
+    // roda em clk_pix (mesmo domínio das RAMs e dos motores).
+    // ----------------------------------------------------------------
+    wire vga_vs_int;
+
+    reg  vsync_pix_ff1, vsync_pix_ff2;
+    wire vsync_borda_pix = vsync_pix_ff2 & ~vsync_pix_ff1; // borda de subida
+
+    always @(posedge clk_pix) begin
+        vsync_pix_ff1 <= vga_vs_int;
+        vsync_pix_ff2 <= vsync_pix_ff1;
+    end
+
+    // Troca de buffer somente na borda de vsync
+    reg buffer_ativo;
+    reg [2:0] swap_sync;
+    reg swap_pendente;
+
+    always @(posedge clk_pix) begin
+        swap_sync <= {swap_sync[1:0], swap_request};
+    end
+    wire swap_pulso_pix = swap_sync[1] & ~swap_sync[2];
+
+    always @(posedge clk_pix) begin
+        if (reset) begin
+            buffer_ativo  <= 1'b0;
+            swap_pendente <= 1'b0;
+        end else begin
+            if (vsync_borda_pix && swap_pendente) begin
+                buffer_ativo  <= ~buffer_ativo;
+                swap_pendente <= 1'b0;
+            end
+            if (swap_pulso_pix)
+                swap_pendente <= 1'b1;
+        end
+    end
+
+    assign tilemap_data = buffer_ativo ? tilemap_data_b : tilemap_data_a;
+
+    // Sincroniza bg_scroll_x/y (domínio clk_sys) → clk_pix e só confirma
+    // (latch) o valor usado pelo motor na borda de vsync.
+    reg [7:0] bg_scroll_x_sync1, bg_scroll_x_sync2;
+    reg [7:0] bg_scroll_y_sync1, bg_scroll_y_sync2;
+    reg [7:0] bg_scroll_x_quadro, bg_scroll_y_quadro;
+
+    always @(posedge clk_pix) begin
+        bg_scroll_x_sync1 <= bg_scroll_x;
+        bg_scroll_x_sync2 <= bg_scroll_x_sync1;
+        bg_scroll_y_sync1 <= bg_scroll_y;
+        bg_scroll_y_sync2 <= bg_scroll_y_sync1;
+
+        if (reset) begin
+            bg_scroll_x_quadro <= 8'd0;
+            bg_scroll_y_quadro <= 8'd0;
+        end else if (vsync_borda_pix) begin
+            bg_scroll_x_quadro <= bg_scroll_x_sync2;
+            bg_scroll_y_quadro <= bg_scroll_y_sync2;
+        end
+    end
+
+    // Padroes de tile: 256 padroes de 8x8 = 16384 pixels
+    wire [13:0] padrao_addr;
+    wire [7:0]  padrao_data;
+    ram_sdp_mif #(.WIDTH(8), .DEPTH(16384), .ADDR(14),
+                  .MIFFILE("padroes_tiles.mif"), .HEXFILE("padroes_tiles.hex"))
+        u_padroes_tiles (
+            .clk_wr(clk_pll_100), .we(1'b0), .addr_wr(14'd0), .data_in(8'd0),
+            .clk_rd(clk_pix), .addr_rd(padrao_addr), .data_out(padrao_data)
+        );
+
+    // Padroes de sprite: 32 padroes de 16x16 = 8192 pixels
+    wire [12:0] padrao_addr_sprite;
+    wire [7:0]  padrao_data_sprite;
+    ram_sdp_mif #(.WIDTH(8), .DEPTH(8192), .ADDR(13),
+                  .MIFFILE("padroes_sprites.mif"), .HEXFILE("padroes_sprites.hex"))
+        u_padroes_sprites (
+            .clk_wr(clk_pll_100), .we(1'b0), .addr_wr(13'd0), .data_in(8'd0),
+            .clk_rd(clk_pix), .addr_rd(padrao_addr_sprite), .data_out(padrao_data_sprite)
+        );
+
+    // ---------------------------------------------------------------
+    // Unidade de desenho
+    // ---------------------------------------------------------------
+    //
+    // *** SINCRONISMO 320x240 logico → 640x480 fisico (revisao 2) ***
+    //
+    // Problema anterior (fim da imagem no inicio da linha):
+    //   O pipeline das BRAMs (BG=2 ciclos, SPR=1 ciclo) continuava
+    //   "valido" no fim da area ativa. Os ultimos pixels pedidos
+    //   (colunas finais) permaneciam no pipeline e eram exibidos no
+    //   inicio da linha seguinte — efeito de "final vira inicio".
+    //
+    // Correcoes desta revisao:
+    //   1) Sinal req_valid por motor: so pede pixel se a coordenada
+    //      adiantada ainda esta dentro de 0..639 / 0..479. Fora disso
+    //      o pipeline e invalidado (cor_valida/pixel_ativo = 0).
+    //   2) Sem "clamp" para a ultima coluna: fora do range nao
+    //      reutiliza o pixel 639 (isso alimentava o residual).
+    //   3) Fase trava em next_x do vga_driver durante a area ativa
+    //      (fonte da verdade), e so usa o contador hc no back porch
+    //      para o prefetch das primeiras colunas.
+    //   4) logico = fisico[9:1] (cada pixel logico = 2x2 fisicos).
+    //   5) Sem modulo de paleta: bytes RRRGGGBB diretos ao VGA.
+    // ---------------------------------------------------------------
+
+    wire [9:0] next_x, next_y;
+
+    // Contadores auxiliares: so para prefetch no BACK PORCH.
+    // Durante a area ativa a coordenada vem de next_x/next_y (driver).
+    reg hs_d, vs_d;
+    reg [9:0] hc, vc;
+
+    localparam H_BACK_CYC = 10'd48;
+    localparam H_ACT_CYC  = 10'd640;
+    localparam H_TOTAL    = 10'd800;
+    localparam V_BACK_CYC = 10'd33;
+    localparam V_ACT_CYC  = 10'd480;
+    localparam V_TOTAL    = 10'd525;
+
+    always @(posedge clk_pix or posedge reset) begin
+        if (reset) begin
+            hs_d <= 1'b1;
+            vs_d <= 1'b1;
+            hc   <= 10'd0;
+            vc   <= 10'd0;
+        end else begin
+            hs_d <= VGA_HS;
+            vs_d <= vga_vs_int;
+
+            // X: reinicia no fim do pulso HSYNC (inicio do back porch)
+            if (VGA_HS && !hs_d)
+                hc <= 10'd0;
+            else
+                hc <= (hc == H_TOTAL - 10'd1) ? 10'd0 : hc + 10'd1;
+
+            // Y: reinicia no fim do pulso VSYNC; +1 a cada fim de linha
+            if (vga_vs_int && !vs_d)
+                vc <= 10'd0;
+            else if (VGA_HS && !hs_d)
+                vc <= (vc == V_TOTAL - 10'd1) ? 10'd0 : vc + 10'd1;
+        end
+    end
+
+    // Area ativa segundo o DRIVER (next_x/next_y validos em 0..639 / 0..479).
+    // next_x=0 no primeiro pixel e ambiguo com blank; usamos tambem o
+    // contador hc para saber se ainda estamos no back porch ou ja na ativa.
+    wire in_h_active = (hc >= H_BACK_CYC) && (hc < H_BACK_CYC + H_ACT_CYC);
+    wire in_v_active = (vc >= V_BACK_CYC) && (vc < V_BACK_CYC + V_ACT_CYC);
+    wire video_on    = in_h_active & in_v_active;
+
+    // Coordenada de DESENHO (pixel que o VGA esta pintando agora):
+    // prioriza next_x do driver; no pixel 0 (next_x=0) usa hc-BACK.
+    wire [9:0] draw_x = in_h_active
+                        ? ((next_x != 10'd0) ? next_x : (hc - H_BACK_CYC))
+                        : 10'd0;
+    wire [9:0] draw_y = in_v_active
+                        ? ((next_y != 10'd0) ? next_y : (vc - V_BACK_CYC))
+                        : 10'd0;
+
+    // ------------------------------------------------------------
+    // Coordenadas de PEDIDO (prefetch) = draw + latencia do motor,
+    // calculadas de forma continua a partir de hc/vc para funcionar
+    // tambem no back porch (antes de next_x voltar a contar).
+    //
+    // req_x = hc + LAT - H_BACK   (0 se ainda antes do porch util)
+    // req_valid = req dentro de [0 .. H_ACT-1] x [0 .. V_ACT-1]
+    //   → fora do range o pipeline e INVALIDADO (nao reusa coluna 639).
+    // ------------------------------------------------------------
+    wire [10:0] raw_x_bg  = {1'b0, hc} + 11'd2; // + latencia BG
+    wire [10:0] raw_y_bg  = {1'b0, vc} + 11'd2;
+    wire [10:0] raw_x_spr = {1'b0, hc} + 11'd1; // + latencia SPR
+    wire [10:0] raw_y_spr = {1'b0, vc} + 11'd1;
+
+    wire [10:0] adj_x_bg  = (raw_x_bg  >= {1'b0, H_BACK_CYC}) ? (raw_x_bg  - {1'b0, H_BACK_CYC}) : 11'd0;
+    wire [10:0] adj_y_bg  = (raw_y_bg  >= {1'b0, V_BACK_CYC}) ? (raw_y_bg  - {1'b0, V_BACK_CYC}) : 11'd0;
+    wire [10:0] adj_x_spr = (raw_x_spr >= {1'b0, H_BACK_CYC}) ? (raw_x_spr - {1'b0, H_BACK_CYC}) : 11'd0;
+    wire [10:0] adj_y_spr = (raw_y_spr >= {1'b0, V_BACK_CYC}) ? (raw_y_spr - {1'b0, V_BACK_CYC}) : 11'd0;
+
+    // valido so se a coordenada pedida ainda esta na area ativa
+    wire req_valid_bg  = (adj_x_bg  < {1'b0, H_ACT_CYC}) && (adj_y_bg  < {1'b0, V_ACT_CYC});
+    wire req_valid_spr = (adj_x_spr < {1'b0, H_ACT_CYC}) && (adj_y_spr < {1'b0, V_ACT_CYC});
+
+    // Dentro do range: usa a coordenada; fora: 0 (o valid=0 descarta o dado)
+    wire [9:0] px_bg  = req_valid_bg  ? adj_x_bg[9:0]  : 10'd0;
+    wire [9:0] py_bg  = req_valid_bg  ? adj_y_bg[9:0]  : 10'd0;
+    wire [9:0] px_spr = req_valid_spr ? adj_x_spr[9:0] : 10'd0;
+    wire [9:0] py_spr = req_valid_spr ? adj_y_spr[9:0] : 10'd0;
+
+    // Logico 320x240: divide por 2 (pixel logico = 2x2 fisicos)
+    wire [8:0] logico_x_bg  = px_bg[9:1];
+    wire [8:0] logico_y_bg  = py_bg[9:1];
+    wire [8:0] logico_x_spr = px_spr[9:1];
+    wire [8:0] logico_y_spr = py_spr[9:1];
+    wire [8:0] logico_x_poly = draw_x[9:1];
+    wire [8:0] logico_y_poly = draw_y[9:1];
+
+    wire [7:0] cor_bg;
+    wire       bg_valido;
+
+    motor_background u_motor_bg (
+        .clk_pix(clk_pix),
+        .reset(reset),
+        .logico_x(logico_x_bg),
+        .logico_y(logico_y_bg),
+        .req_valid(req_valid_bg),   // invalida pipeline fora da area
+        .scroll_x(bg_scroll_x_quadro),
+        .scroll_y(bg_scroll_y_quadro),
+        .tilemap_addr(tilemap_addr),
+        .tilemap_data(tilemap_data),
+        .padrao_addr(padrao_addr),
+        .padrao_data(padrao_data),
+        .cor_indice(cor_bg),
+        .cor_valida(bg_valido)
+    );
+
+    wire [7:0] cor_sprite;
+    wire       sprite_ativo;
+
+    motor_sprites u_motor_sprites (
+        .clk_pix(clk_pix),
+        .reset(reset),
+        .logico_x(logico_x_spr),
+        .logico_y(logico_y_spr),
+        .req_valid(req_valid_spr),  // invalida pipeline fora da area
+        .attr_x(sprite_x),
+        .attr_y(sprite_y),
+        .attr_padrao(sprite_padrao),
+        .attr_en(sprite_en),
+        .attr_pri(sprite_pri),
+        .attr_fliph(sprite_fliph),
+        .attr_flipv(sprite_flipv),
+        .padrao_addr_sprite(padrao_addr_sprite),
+        .padrao_data_sprite(padrao_data_sprite),
+        .cor_indice(cor_sprite),
+        .pixel_ativo(sprite_ativo)
+    );
+
+    // Poligonos: latencia 0, coordenada de desenho atual
+    wire [7:0] cor_poly;
+    wire       poly_ativo;
+
+    rasterizador_multi u_rasterizador (
+        .clk_pix(clk_pix),
+        .reset(reset),
+        .logico_x($signed({1'b0, logico_x_poly})),
+        .logico_y($signed({1'b0, logico_y_poly})),
+        .poly_vx(poly_vx),
+        .poly_vy(poly_vy),
+        .poly_cor(poly_cor),
+        .poly_habilitado(poly_habilitado),
+        .poly_modo_retangulo(poly_modo_retangulo),
+        .pixel_ativo(poly_ativo),
+        .cor_indice(cor_poly)
+    );
+
+    wire [7:0] color_rrggbb;
+
+    compositor u_compositor (
+        .enable_bg(enable_bg),
+        .enable_sprite(enable_sprite),
+        .enable_poly(enable_poly),
+        .cor_bg(cor_bg),
+        .bg_valido(bg_valido),
+        .cor_poly(cor_poly),
+        .poly_ativo(poly_ativo & video_on),
+        .cor_sprite(cor_sprite),
+        .sprite_ativo(sprite_ativo),
+        .cor_final(color_rrggbb)
+    );
+
+    // RRRGGGBB direto; preto fora da area ativa
+    wire [7:0] color_final = video_on ? color_rrggbb : 8'd0;
+
+    vga_driver u_vga (
+        .clock(clk_pix),
+        .reset(reset),
+        .color_in(color_final),
+        .next_x(next_x),
+        .next_y(next_y),
+        .hsync(VGA_HS),
+        .vsync(vga_vs_int),
+        .red(VGA_R),
+        .green(VGA_G),
+        .blue(VGA_B),
+        .sync(VGA_SYNC_N),
+        .clk(VGA_CLK),
+        .blank(VGA_BLANK_N)
+    );
+    assign VGA_VS = vga_vs_int;
+
+    // ---------------------------------------------------------------
+    // Depuracao visual
+    // ---------------------------------------------------------------
+    assign LEDR[0] = estimulo_invalido | endereco_invalido;
+    assign LEDR[1] = buffer_ativo;
+    assign LEDR[2] = bg_valido;          // debug: flag do pipeline de background
+    assign LEDR[9:3] = 7'd0;
+
+endmodule
