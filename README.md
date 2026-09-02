@@ -58,7 +58,7 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
 
   <div align="center">
   <figure>
-    <img src="Docs/gif_back.gif" width="200px"/>
+    <img src="Docs/gif_back.gif" width="300px"/>
     <figcaption>
       <p align="center">
         <b>Figura 1</b> - Movimentação do Background
@@ -72,7 +72,7 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
 
   <div align="center">
   <figure>
-    <img src="Docs/todos_sprites.jpeg" width="200px"/>
+    <img src="Docs/todos_sprites.jpeg" width="300px"/>
     <figcaption>
       <p align="center">
         <b>Figura 2</b> - 32 Sprites simultâneos no VGA
@@ -92,6 +92,17 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
 
 - **Compositor:**
   Combina a contribuição individual de cada motor gráfico a cada ciclo de pixel. Possui lógica de mistura de camadas respeitando a prioridade de exibição, onde os sprites podem se sobrepor a polígonos, que por sua vez se sobrepõem ao background. A transparência é gerenciada reservando o índice `0` para que a camada inferior seja exibida.
+
+ <div align="center">
+  <figure>
+    <img src="Docs/all_sprite_poli.jpeg" width="200px"/>
+    <figcaption>
+      <p align="center">
+        <b>Figura 3</b> - Composição completa dos elementos gráficos 
+      </p>
+    </figcaption>
+  </figure>
+  </div>
 
 - **Driver VGA e Paleta:**
   Controla os tempos estritos de H-SYNC e V-SYNC para a saída 640x480. Puxa os dados resultantes do compositor e utiliza uma paleta programável para traduzir o índice de cor (8 bits) em um valor final de RGB (256 cores), enviado diretamente ao DAC e monitor através dos pinos da FPGA.
@@ -163,13 +174,13 @@ Este é o barramento de saída física do coprocessador.
 <hr>
 </details>
 
-## Testes
+## Testes de Mesa
 <details>
 <summary>Testes</summary>
  Para interagir com o coprocessador gráfico e realizar testes foram adicionados estados que simulam cenários de atuação do hardware e foram utilizados entradas da placa.
  ### Entradas
 <details>
-<summary>Interface de demonstração</summary>
+<summary><h2>Interface de demonstração</h2></summary>
 
  
 - Key 0: Confirmar ação;
@@ -258,6 +269,18 @@ Saída:
 - Alternância visual entre as diferentes sprites disponíveis.
 - Confirmação e exibição da sprite selecionada na tela.
 - Espelhamento horizontal ou vertical da sprite confirmada conforme SW[5].
+
+<div align="center">
+  <figure>
+    <img src="Docs/espelhamento.gif" width="200px"/>
+    <figcaption>
+      <p align="center">
+        <b>Figura 4</b> - Espelhamento do sprite
+      </p>
+    </figcaption>
+  </figure>
+  </div>
+  
 </details>
 <hr>
 
@@ -333,6 +356,18 @@ Saída:
 **Saída:**
 - Demonstração de **transparência** (índice de cor 0).
 - **Prioridade** entre as camadas (Sprite > Polígono > Background).
+
+<div align="center">
+  <figure>
+    <img src="transparencia.gif" width="200px"/>
+    <figcaption>
+      <p align="center">
+        <b>Figura 5</b> - Transparência do sprite
+      </p>
+    </figcaption>
+  </figure>
+  </div>
+  
 </details>
 <hr>
 
@@ -350,12 +385,41 @@ Saída:
 **Saída esperada:**
 - Troca do plano de fundo exibido na tela.
 - Acionamento do **LED1** indicando a ativação do buffer.
+
+<div align="center">
+  <figure>
+    <img src="Docs/buffer.gif" width="200px"/>
+    <figcaption>
+      <p align="center">
+        <b>Figura 6</b> - Troca de background
+      </p>
+    </figcaption>
+  </figure>
+  </div>
+  
 </details>
 <hr>
+</details>
 
 ### Testbenches
 <details> 
  <summary>Testes e Script de automação</summary>
+ O projeto possui um conjunto de testbenches em Verilog e um script de automação para o ModelSim/QuestaSim, cobrindo os módulos principais e a integração do co-processador gráfico.
+
+ Arquivo | O que testa
+ :---:|:---
+ `tb_debounce_edge.v` | Debounce e detecção de borda dos botões
+ `tb_banco_registradores.v` | Mapa de registradores e escritas (scroll, sprites, polígonos, swap, endereços inválidos)
+ `tb_porta_estimulo.v` | Geração de comandos a partir de SW e KEY
+ `tb_motor_background.v` | Motor de tilemap e scroll
+ `tb_motor_sprites.v` | Motor de sprites (posição, enable, flip, prioridade)
+ `tb_rasterizador_multi.v` | Rasterização de retângulos e triângulos
+ `tb_compositor.v` | Composição de camadas, prioridade e transparência
+ `tb_vga_driver.v` | Timing VGA 640×480
+ `tb_coprocessador_top.v` | Fluxo porta de estímulo → banco de registradores → compositor
+
+ O arquivo 'tb_coprocessador_top.v' integra a porta de estímulo, o banco de registradores e o compositor. Não possui os IPs de PLL e as RAMs. Os clocks de sistema e de pixel são gerados no próprio teste. Dentro dele, os cenários obrigatórios do problema (transparência, espelhamento, sobreposição, prioridade, troca de buffers e comandos inválidos) são testados em nível funcional.
+
+ Além disso o projeto possui um script de automação (run_all_modelsim.do) que automatiza a execução dos testes. Ele tem como função compilar, executar e reportar os resultados de todos os 9 testes.
 </details>
  
-</details>
