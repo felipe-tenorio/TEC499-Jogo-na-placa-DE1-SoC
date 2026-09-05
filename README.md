@@ -31,6 +31,22 @@
   - Aplicar **transparência** antes da seleção do pixel final;
   - Converter o índice de cor de 8 bits por meio de uma paleta programável de 256 entradas RGB.
 </details>
+
+<details>
+<summary><h2>Requisitos funcionais e Não funcionais</h2></summary>
+
+</details>
+
+<details>
+<summary><h2>Estrutura proposta e decisões tomadas</h2></summary>
+
+</details>
+
+<details>
+ <summary><h2>Análise de Recursos</h2></summary>
+ 
+</details>
+
 </details>
 
  ## Estrutura Implementada
