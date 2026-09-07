@@ -377,10 +377,10 @@ contínua de vídeo.
 
   <div align="center">
   <figure>
-    <img src="Docs/gif_back.gif" width="300px"/>
+    <img src="Docs/background.png" width="300px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 2</b> - Movimentação do Background
+        <b>Figura 2</b> - Background estático
       </p>
     </figcaption>
   </figure>
@@ -428,7 +428,7 @@ camadas, atendendo ao requisito mínimo.
 
  <div align="center">
   <figure>
-    <img src="Docs/all_sprite_poli.jpeg" width="200px"/>
+    <img src="Docs/all_sprite_poli.jpeg" width="300px"/>
     <figcaption>
       <p align="center">
         <b>Figura 4</b> - Composição completa dos elementos gráficos 
@@ -574,6 +574,18 @@ Saída:
 - Movimentação do plano de fundo (tilemap) nas direções horizontal e vertical.
 - Velocidade de deslocamento alterável via SW[5].
 - Parada do movimento quando as chaves de direção estão em 00 ou 11.
+
+<div align="center">
+  <figure>
+    <img src="Docs/gif_back.gif" width="300px"/>
+    <figcaption>
+      <p align="center">
+        <b>Figura 5</b> - Movimentação do Background
+      </p>
+    </figcaption>
+  </figure>
+  </div>
+  
 </details>
 <hr>
 
@@ -605,10 +617,10 @@ Saída:
 
 <div align="center">
   <figure>
-    <img src="Docs/espelhamento.gif" width="200px"/>
+    <img src="Docs/espelhamento.gif" width="300px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 5</b> - Espelhamento do sprite
+        <b>Figura 6</b> - Espelhamento do sprite
       </p>
     </figcaption>
   </figure>
@@ -643,6 +655,18 @@ Saída:
 - Movimentação da sprite selecionada nas quatro direções.
 - Controle de velocidade via SW[5].
 - Parada do movimento quando as chaves de direção estão em 00 ou 11.
+
+<div align="center">
+  <figure>
+    <img src="Docs/sprite_move.gif" width="300px"/>
+    <figcaption>
+      <p align="center">
+        <b>Figura 7</b> - Movimentação do Sprite
+      </p>
+    </figcaption>
+  </figure>
+  </div>
+  
 </details>
 <hr>
 
@@ -667,6 +691,18 @@ Saída:
 - Exibição de polígonos preenchidos (retângulos e/ou triângulos) na tela.
 - Posição e cor configuráveis pelas chaves.
 - Confirmação e rasterização correta após o acionamento de KEY0.
+
+<div align="center">
+  <figure>
+    <img src="Docs/poli.gif" width="300px"/>
+    <figcaption>
+      <p align="center">
+        <b>Figura 8</b> - Criação do Polígono
+      </p>
+    </figcaption>
+  </figure>
+  </div>
+  
 </details>
 <hr>
 
@@ -695,7 +731,7 @@ Saída:
     <img src="transparencia.gif" width="200px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 6</b> - Transparência do sprite
+        <b>Figura 9</b> - Transparência do sprite
       </p>
     </figcaption>
   </figure>
@@ -724,7 +760,7 @@ Saída:
     <img src="Docs/buffer.gif" width="200px"/>
     <figcaption>
       <p align="center">
-        <b>Figura 7</b> - Troca de background
+        <b>Figura 10</b> - Troca de background
       </p>
     </figcaption>
   </figure>
