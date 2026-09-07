@@ -34,7 +34,86 @@
 
 <details>
 <summary><h2>Requisitos funcionais e Não funcionais</h2></summary>
+ 
+### Interface de vídeo e resolução
 
+A saída VGA está com 640 × 480 pixels, com
+resolução lógica de 320 × 240 pixels e duplicação espacial 2×2 de cada pixel lógico. O módulo vga_driver gera sincronismo horizontal e vertical
+compatível com 640 × 480, alimentado por um PLL que produz o clock de pixel
+de 25 MHz. A coordenada lógica é obtida por divisão inteira por 2 das coordenadas de
+varredura, e o compositor opera exclusivamente no domínio lógico.
+
+### Motor de background (tilemap)
+
+O requisito mínimo pede ao menos uma camada de background com tilemap de 40 × 30
+entradas, tiles de 8 × 8 pixels, pelo menos 256 padrões disponíveis, atualização de tiles
+por posição, deslocamento horizontal e vertical com tratamento de repetição ou recorte, e
+geração de índice de cor válido sem interromper o fluxo de vídeo. A implementação foi capaz de cumprir esses requisitos.
+
+### Motor de sprites
+
+O enunciado exige memória de atributos para no mínimo 32 sprites, sprites de 16 × 16
+pixels (formados por quatro tiles 8 × 8), com posição X/Y, índice de padrão, habilitação,
+prioridade, espelhamento horizontal e vertical, e seleção de paleta. Também exige
+documentação da prioridade entre sprites no mesmo pixel.
+
+O projeto implementa:
+• Banco de atributos para 32 sprites (arrays de posição, padrão, enable, prioridade
+de 3 bits, flip H e flip V).
+• Sprites de 16 × 16 pixels compostos a partir de padrões armazenados em
+ram_sprites / ram_padrao_sprite.
+• Espelhamento horizontal e vertical controlados por flags por sprite.
+• Prioridade entre sprites documentada e testável via registradores de sobreposição
+(OVR_SPR1_X e OVR_PRIORIDADE), permitindo demonstrar qual sprite
+prevalece quando há colisão espacial.
+A seleção de paleta por sprite não está plenamente diferenciada: o núcleo utiliza uma
+única paleta programável de 256 entradas compartilhada. O índice de cor 0 é tratado
+como transparente, conforme exigido.
+
+### Rasterizador de polígonos
+
+É exigido o desenho de triângulos e retângulos preenchidos com aritmética inteira. O
+módulo rasterizador_multi implementa até quatro polígonos simultâneos, cada um
+podendo operar em modo retângulo (teste de limites de caixa) ou modo triângulo (teste de
+orientação por produto cruzado / half-plane), usando exclusivamente aritmética inteira
+com coordenadas signed de 10 bits. A cor e o estado de habilitação são programáveis por
+polígono.
+
+### “Compositor” (cadeia de multiplexadores que definem a prioridade do
+pixel), paleta e transparência
+
+O compositor combina, a cada pixel lógico, as contribuições do background, da camada
+de polígonos e dos sprites. A regra de prioridade implementada é fixa e documentada:
+sprite (se ativo e cor ≠ 0) tem precedência sobre polígono (se ativo e cor ≠ 0), que por sua
+vez tem precedência sobre o background. Isso fornece três níveis de prioridade entre
+camadas, atendendo ao requisito mínimo. A transparência (índice 0) é aplicada antes da
+seleção do pixel final.
+A conversão do índice de 8 bits para RGB é realizada por uma paleta de 256 entradas
+interna ao driver VGA, produzindo o sinal de 8 bits por canal enviado ao DAC VGA da
+DE1-SoC.
+
+### Interface de comandos e mapa de registradores
+
+Embora a integração MMIO completa com o processador ARM não faça parte deste
+problema, o núcleo já possui um mapa de registradores documentado
+(banco_registradores) com endereços para scroll, seleção e atributos de sprites, flags de
+camada, controle de troca de buffer e parâmetros de polígonos. A porta de estímulo
+(porta_estimulo) emula a escrita nesses registradores a partir de chaves e botões,
+
+permitindo demonstrar todos os cenários de teste exigidos (transparência, espelhamento,
+sobreposição, prioridade, troca de buffers e comandos inválidos). Endereços fora do
+mapa geram sinalização de estimulo/endereço inválido, atendendo ao cenário de
+comandos inválidos.
+
+### Conclusão
+
+De forma geral, o núcleo atende aos requisitos funcionais centrais do motor gráfico
+(background com scroll e wrapping, 32 sprites com flip e prioridade, retângulos e
+triângulos, composição com transparência e três níveis de prioridade, paleta de 256 cores,
+VGA 640×480 com resolução lógica 320×240). Os principais pontos de atenção são:
+• Escrita dinâmica completa de tilemap e padrões ainda não exposta na
+demonstração (estrutura de memória preparada);
+• Paleta única compartilhada, sem seleção independente de sub-paleta por sprite;
 </details>
 
 <details>
@@ -44,7 +123,99 @@
 
 <details>
  <summary><h2>Análise de Recursos</h2></summary>
- 
+ Esta seção consolida os resultados de síntese e análise de timing obtidos com o Quartus Prime para o dispositivo Cyclone V 5CSEMA5F31C6 (DE1-SoC), confrontando-os com os requisitos de desempenho implícitos do PBL01: geração estável de VGA 640 × 480 a ~60 Hz (clock de pixel de 25 MHz), operação das memórias e do datapath gráfico sem interrupção do fluxo de vídeo, e utilização de recursos compatível com a FPGA da placa.
+
+### Utilização de recursos
+
+O relatório de fitter do projeto indica a seguinte ocupação aproximada:
+• Lógica: cerca de 2.564 ALMs de 32.070 disponíveis (aproximadamente 8 %).
+• Registradores: cerca de 1.616 registradores dedicados.
+• Memória em bloco: cerca de 229.376 bits de 4.065.280 disponíveis (cerca de 6 %),
+implementados em 28 blocos M10K de 397 disponíveis (cerca de 7 %).
+• Blocos DSP: 24 de 87 disponíveis (cerca de 28 %), utilizados principalmente nas
+operações aritméticas do rasterizador de triângulos e em caminhos de endereço.
+• PLLs: 2 de 6 disponíveis (33 %), correspondentes ao clock de pixel e ao clock de
+100 MHz das memórias.
+• Pinos: 241 de 457 (53 %), coerente com o uso de VGA, chaves, botões, LEDs e
+displays.
+
+A utilização de lógica e de memória é confortável, deixando margem significativa para
+expansões futuras (mais sprites, segunda camada de background, interface MMIO
+completa ou lógica de aceleração adicional). O consumo de DSP é o item relativamente
+mais elevado, o que é esperado dada a natureza combinacional do teste de inclusão em
+triângulos.
+
+### Timing e frequências
+Os domínios de clock relevantes são: CLOCK_50 (base), clk_pix (25 MHz alvo) e
+clk_pll_100 (100 MHz alvo). O relatório de timing estático (STA) apresenta, no modelo
+Slow 1100 mV 85 °C, Fmax reportado na ordem de 140 MHz para o domínio de 100 MHz
+e valores muito inferiores (na faixa de poucos MHz) para o domínio associado ao clock de
+pixel em algumas seções do relatório.
+O domínio de 100 MHz das memórias apresenta Fmax reportado acima de 140 MHz no
+modelo lento, o que é adequado para as leituras de tilemap e padrões alinhadas ao
+pipeline gráfico.
+
+### Desempenho funcional
+Do ponto de vista funcional, o núcleo gera continuamente o quadro VGA, aplica scroll com
+wrapping, compõe até 32 sprites com transparência e espelhamento, rasteriza até quatro
+polígonos e realiza a troca de buffer de tilemap na borda de VSYNC. A resolução lógica
+320 × 240 com duplicação 2×2 atende ao requisito de saída 640 × 480. A latência do
+pipeline de background (três ciclos de pixel) é absorvida pelo alinhamento de validação de
+cor, de modo que não há bolhas visíveis na imagem.
+A prioridade fixa de camadas e a resolução de prioridade entre sprites permitem
+demonstrar todos os cenários de teste listados no enunciado (transparência,
+espelhamento, sobreposição, prioridade, troca de buffers e comandos inválidos), desde
+que exercitados pela porta de estímulo.
+
+### Gargalos identificados
+
+Os principais gargalos observados na arquitetura atual são:
+• Caminho combinacional do rasterizador de triângulos e da avaliação simultânea de
+múltiplos sprites no mesmo ciclo de pixel, que pressiona o timing do domínio de 25
+MHz.
+• Ausência de escrita runtime completa nas memórias de tilemap e de padrões a
+partir da porta de estímulo (wren fixo em 0 na versão de demonstração), limitando
+a atualização dinâmica de conteúdo gráfico sem reprogramação da FPGA.
+• Paleta única compartilhada, sem sub-paletas por sprite, o que reduz flexibilidade de
+colorização independente de objetos.
+• Dependência de estímulo local (chaves/botões) em vez de uma interface MMIO
+real, o que é aceitável no Problema I, mas impede ainda a validação ponta a ponta
+com software no ARM.
+
+### Limitações conhecidas
+
+Em relação ao enunciado completo do PBL01, temos listadas as seguintes limitações:
+• A atualização dinâmica de cada posição do tilemap e a carga de novos padrões em
+runtime não estão demonstradas pela interface atual (pois memórias estão sendo
+inicializadas com arquivos .MIF), embora a estrutura de memória dual-port esteja
+preparada;
+• Seleção de paleta por sprite não está implementada de forma independente;
+• O número de polígonos simultâneos está limitado a quatro;
+Essas limitações não impedem a demonstração do núcleo na placa nem o atendimento ao
+núcleo dos requisitos gráficos mínimos.
+
+### Melhorias possíveis
+
+Com base na análise de recursos e timing, as melhorias mais promissoras são:
+• Expor portas de escrita nas RAMs de tilemap e de padrões, integradas ao mapa de
+registradores, permitindo carga dinâmica de cena;
+• Implementar sub-paletas ou offset de índice de cor por sprite, aproximando o
+comportamento de consoles de 16 bits clássicos;
+• Substituir a porta de estímulo por um interface MMIO mapeado no barramento do
+HPS (Cyclone V SoC), preparando o caminho para o driver Assembly e a aplicação
+C;
+• Avaliar uma segunda camada de background ou mais sprites, dado que a utilização
+atual de ALMs e memória deixa margem confortável;
+
+### Conclusão da análise
+
+O coprocessador gráfico apresentado utiliza uma fração modesta dos recursos da
+Cyclone V da DE1-SoC e implementa, em hardware, os elementos centrais exigidos pelo
+PBL01: background em tiles com scroll, sprites com atributos completos, rasterização de
+retângulos e triângulos, composição com transparência e prioridade, e saída VGA estável
+em 640 × 480 a partir de resolução lógica 320 × 240. Os pontos de atenção concentram-
+se na consolidação do timing do domínio de pixel, na exposição de escritas dinâmicas de
+memória e na evolução da interface de controle em direção ao MMIO.
 </details>
 
 </details>
@@ -82,6 +253,19 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
 
 - **Motor de Background:**
   Implementa uma camada de plano de fundo baseada em um *tilemap* de 40x30 entradas. Os padrões gráficos (*tiles*) possuem 8x8 pixels e ficam armazenados em memória RAM interna (com 256 padrões suportados). O motor realiza deslocamento (scroll) contínuo nos eixos X e Y para navegação pelo cenário.
+  
+  A implementação realiza o seguinte:
+• Tilemap de 40 × 30 posições (endereçamento linear row×40 + col), com duas
+memórias RAM (ram_tilemap e ram_tilemapB) que permitem troca de buffer de
+cena.
+• Tiles de 8 × 8 pixels armazenados em RAM de padrões (ram_padrao_tiles) com
+capacidade de 16.384 palavras de 8 bits, compatível com 256 padrões de 64 bytes
+cada.
+• Deslocamento horizontal e vertical (scroll_x, scroll_y) com wrapping modular por
+subtrações sucessivas de 320/240, garantindo repetição da cena.
+• Pipeline de três estágios no domínio do clock de pixel, alinhando endereço de
+tilemap, endereço de padrão e índice de cor, de modo a não interromper a geração
+contínua de vídeo.
 
   <div align="center">
   <figure>
@@ -95,7 +279,11 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
   </div>
 
 - **Motor de Sprites:**
-  Oferece suporte para renderizar até 32 sprites simultâneos. Cada sprite tem resolução de 16x16 pixels e é analisado em tempo real pelo motor. Para cada objeto, o motor respeita os seguintes atributos mapeados em memória: posição (X, Y), índice de padrão gráfico, bit de habilitação, nível de prioridade e controle de espelhamento (horizontal e vertical).
+  Oferece suporte para renderizar até 32 sprites simultâneos. Cada sprite tem resolução de 16x16 pixels, sendo compostos a partir de padrões armazenados em ram_sprites / ram_padrao_sprite e são analisados em tempo real pelo motor. Para cada objeto, o motor respeita os seguintes atributos mapeados em memória: posição (X, Y), índice de padrão gráfico, bit de habilitação, nível de prioridade e controle de espelhamento (horizontal e vertical), controlados por flags por sprite.
+
+A seleção de paleta por sprite não está plenamente diferenciada: o núcleo utiliza uma
+única paleta programável de 256 entradas compartilhada. O índice de cor 0 é tratado
+como transparente.
 
   <div align="center">
   <figure>
@@ -118,7 +306,7 @@ O sistema renderiza os elementos gráficos por meio de três módulos principais
 <summary>Compositor de Cena e Controlador de Vídeo</summary>
 
 - **Compositor:**
-  Combina a contribuição individual de cada motor gráfico a cada ciclo de pixel. Possui lógica de mistura de camadas respeitando a prioridade de exibição, onde os sprites podem se sobrepor a polígonos, que por sua vez se sobrepõem ao background. A transparência é gerenciada reservando o índice `0` para que a camada inferior seja exibida.
+  Combina a contribuição individual de cada motor gráfico a cada ciclo de pixel. Possui lógica de mistura de camadas respeitando a prioridade de exibição, onde os sprites podem se sobrepor a polígonos, que por sua vez se sobrepõem ao background. A transparência é gerenciada reservando o índice `0` para que a camada inferior seja exibida. 
 
  <div align="center">
   <figure>
