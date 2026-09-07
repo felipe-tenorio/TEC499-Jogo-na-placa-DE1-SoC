@@ -8,13 +8,14 @@
 <details>
   <summary>Descrição</summary>
 
-  O repositório é a primeira fase de um projeto do desenvolvimento de um jogo que irá funcionar na placa **De1-SoC**. Nessa fase foi desenvolvido um coprocessador gráfico em FPGA, feito na que será desenvolvido em verilog para suportar imagens, armazenar recursos gráficos e desenhar background, sprites e polígonos no VGA.
+  O repositório é um dos componentes da primeira fase de um projeto do desenvolvimento de um jogo que irá funcionar na placa **De1-SoC**. Nessa fase foi desenvolvido um núcleo de um coprocessador gráfico em FPGA, este foi feito em verilog comportamental e tem capacidade para suportar imagens, armazenar recursos gráficos e desenhar background, sprites e polígonos no VGA.
 
-  O objetivo foi criar um processador gráfico para suportar a renderização visual de um protótipo do jogo Bomberman, que será desenvolvido em etapas futuras do projeto. O hardware foi desenvolvido em verilog para suportar imagens, armazenar recursos gráficos e desenhar background, sprites e polígonos no VGA
-  Recursos utilizados:
+  O objetivo final deste projeto é criar um coprocessador gráfico completo para suportar a renderização visual de um protótipo do jogo Bomberman, que será desenvolvido em etapas futuras.
+  
+  Recursos utilizados nesta primeira fase:
   - Placa Terasic DE1-SoC Board com FPGA Cyclone V 5CSEMA5F31C6
   - Quartus Prime 25.1std.0 Lite Edition
-  - Verilog
+  - Verilog (comportamental)
 
 
 <details>
@@ -61,7 +62,7 @@ documentação da prioridade entre sprites no mesmo pixel. Levando em considera�
 
 O desenho de triângulos e retângulos preenchidos com aritmética inteira são obrigatórios para o funcionamento do rasterizador. Ambos objetivos estão presentes no projeto.
 
-### “Compositor” (MUX de priridade), paleta e transparência
+### “Compositor” (MUX de prioridade), paleta e transparência
 
 O compositor combina, a cada pixel lógico, as contribuições do background, da camada
 de polígonos e dos sprites. A transparência (índice 0) é aplicada antes da
@@ -77,7 +78,6 @@ problema, o núcleo já possui um mapa de registradores documentado
 (banco_registradores) com endereços para scroll, seleção e atributos de sprites, flags de
 camada, controle de troca de buffer e parâmetros de polígonos. A porta de estímulo
 (porta_estimulo) emula a escrita nesses registradores a partir de chaves e botões,
-
 permitindo demonstrar todos os cenários de teste exigidos (transparência, espelhamento,
 sobreposição, prioridade, troca de buffers e comandos inválidos). Endereços fora do
 mapa geram sinalização de estimulo/endereço inválido, atendendo ao cenário de
@@ -88,10 +88,10 @@ comandos inválidos.
 De forma geral, o núcleo atende aos requisitos funcionais centrais do motor gráfico
 (background com scroll e wrapping, 32 sprites com flip e prioridade, retângulos e
 triângulos, composição com transparência e três níveis de prioridade, paleta de 256 cores,
-VGA 640×480 com resolução lógica 320×240). Os principais pontos de atenção são:
-• Escrita dinâmica completa de tilemap e padrões ainda não exposta na
+VGA 640×480 com resolução lógica 320×240). Os principais pontos que serão reestruturados são:
+- Escrita dinâmica completa de tilemap e padrões ainda não exposta na
 demonstração (estrutura de memória preparada);
-• Paleta única compartilhada, sem seleção independente de sub-paleta por sprite;
+- Paleta única compartilhada, sem seleção independente de sub-paleta por sprite;
 </details>
 
 <details>
@@ -107,10 +107,11 @@ chaves e botões para programar registradores e exercitar os cenários de teste 
 ### Domínios de clock e sincronização
 
 Foram adotados dois PLLs a partir do CLOCK_50 da placa:
-• meu_pll: gera o clock de pixel de 25 MHz (clk_pix) necessário para 640 × 480 a 60
+- meu_pll: gera o clock de pixel de 25 MHz (clk_pix) necessário para 640 × 480 a 60
 Hz.
-• pllpara100: gera um clock de 100 MHz (clk_pll_100) utilizado pelas memórias de
+- pllpara100: gera um clock de 100 MHz (clk_pll_100) utilizado pelas memórias de
 padrões e tilemaps, permitindo leituras com margem de tempo no pipeline gráfico.
+
 O reset global combina o botão KEY[3] com os sinais de locked dos PLLs, garantindo que
 a lógica de vídeo só opere com clocks estáveis. A troca de buffer de tilemap é
 sincronizada com a borda de subida do VSYNC no domínio do pixel clock, evitando
@@ -123,9 +124,10 @@ necessário, sincronizadores de dois estágios são empregados.
 Em vez de uma interface MMIO completa (reservada a etapas posteriores), o projeto
 implementa um banco de registradores com mapa de endereços explícito e uma porta de
 estímulo que emula escritas a partir da interface física da placa. Essa decisão atende
-simultaneamente a dois objetivos do enunciado: (i) permitir demonstração completa do
-núcleo sem o processador ARM, e (ii) manter o mapa de registradores genérico e
-documentado para futura integração.
+simultaneamente a dois objetivos do enunciado:
+- permitir demonstração completa do núcleo sem o processador ARM;
+- manter o mapa de registradores genérico e documentado para futura integração.
+
 O mapa inclui registradores de status, scroll do background, seleção e atributos de até 32
 sprites, flags de habilitação de camadas, controle de sobreposição e prioridade entre
 sprites, pulso de troca de buffer e parâmetros de até quatro polígonos (vértices, cor, modo
@@ -136,24 +138,25 @@ permitindo o cenário de teste de comandos inválidos.
 
 As memórias foram implementadas como blocos RAM dual-port gerados pelo Quartus (IP
 altsyncram), inicializados por arquivos MIF:
-• Duas RAMs de tilemap (A e B) de 2048 × 8 bits, permitindo double-buffering da
-cena de fundo.
-• RAM de padrões de tiles com 16384 × 8 bits (capacidade para 256 tiles de 8 × 8).
-• RAM de padrões de sprites com capacidade compatível com blocos de 16 × 16.
-• Paleta de 256 entradas RGB.
+- Duas RAMs de tilemap (A e B) de 2048 × 8 bits, permitindo double-buffering da
+cena de fundo;
+- RAM de padrões de tiles com 16384 × 8 bits (capacidade para 256 tiles de 8 × 8);
+- RAM de padrões de sprites com capacidade compatível com blocos de 16 × 16;
+- Paleta de 256 entradas RGB.
+
 A decisão de manter duas cópias do tilemap e de sincronizar a troca com VSYNC foi
 tomada para permitir atualização de cena sem interrupção visual, alinhada ao requisito de
 estabilidade da saída e ao cenário de teste de troca de buffers.
 
 ### Motor de background
 
-O motor de background opera no domínio do clock de pixel com um pipeline de três
-estágios: (1) cálculo de coordenadas com scroll e wrapping, derivação de coluna/linha de
-tile e offset interno do tile; (2) leitura do índice de tile no tilemap e formação do endereço
-de padrão; (3) leitura do índice de cor e validação alinhada ao pipeline. O wrapping é
-realizado por subtrações condicionais de 320 e 240, evitando divisores e mantendo a
-lógica simples e inteira.
-Essa abordagem garante que, para cada pixel lógico válido, um índice de cor esteja
+O motor de background opera no domínio do clock de pixel com um pipeline de três estágios:
+- cálculo de coordenadas com scroll e wrapping, derivação de coluna/linha de tile e offset interno do tile;
+- leitura do índice de tile no tilemap e formação do endereço de padrão;
+- leitura do índice de cor e validação alinhada ao pipeline.
+
+O wrapping é realizado por subtrações condicionais de 320 e 240, evitando divisores e mantendo a
+lógica simples e inteira. Essa abordagem garante que, para cada pixel lógico válido, um índice de cor esteja
 disponível no momento correto, sem bolhas que interrompam o fluxo de vídeo.
 
 ### Motor de sprites
@@ -175,9 +178,9 @@ O rasterizador_multi avalia até quatro polígonos por pixel. No modo retângulo
 comparações de limites; no modo triângulo, utiliza o teste clássico de orientação (produtos
 cruzados com aritmética inteira signed) para decidir se o ponto está no interior. O primeiro
 polígono que contém o pixel (na ordem de índice) determina a cor. Essa decisão privilegia
-
 simplicidade e previsibilidade em hardware, em detrimento de uma fila de prioridade mais
 elaborada entre polígonos.
+
 A limitação a quatro polígonos simultâneos é suficiente para demonstrar retângulos e
 triângulos preenchidos e para compor elementos de interface, atendendo ao requisito
 mínimo sem consumir excesso de lógica combinacional no caminho crítico do pixel.
@@ -208,11 +211,12 @@ permite validação em hardware sem depender ainda do driver Linux.
 
 ### Justificativa das principais decisões
 
-As decisões centrais foram orientadas por três critérios: (1) atender
-aos requisitos mínimos de funcionalidade gráfica com arquitetura modular; (2) manter a
-saída de vídeo estável e contínua; (3) preparar o mapa de registradores e as memórias
-para integração futura via MMIO, sem acoplar o núcleo a um jogo específico. O uso de
-estímulo local, double-buffer de tilemap sincronizado a VSYNC, pipelines curtos nos
+As decisões centrais foram orientadas por três critérios:
+- atender aos requisitos mínimos de funcionalidade gráfica com arquitetura modular;
+- manter a saída de vídeo estável e contínua;
+- preparar o mapa de registradores e as memórias para integração futura via MMIO, sem acoplar o núcleo a um jogo específico.
+
+O uso de estímulo local, double-buffer de tilemap sincronizado a VSYNC, pipelines curtos nos
 motores e prioridade fixa de camadas reflete o equilíbrio entre completude funcional,
 clareza de demonstração e contenção de recursos na Cyclone V.
 
@@ -225,16 +229,16 @@ clareza de demonstração e contenção de recursos na Cyclone V.
 ### Utilização de recursos
 
 O relatório de fitter do projeto indica a seguinte ocupação aproximada:
-• Lógica: cerca de 2.564 ALMs de 32.070 disponíveis (aproximadamente 8 %).
-• Registradores: cerca de 1.616 registradores dedicados.
-• Memória em bloco: cerca de 229.376 bits de 4.065.280 disponíveis (cerca de 6 %),
-implementados em 28 blocos M10K de 397 disponíveis (cerca de 7 %).
-• Blocos DSP: 24 de 87 disponíveis (cerca de 28 %), utilizados principalmente nas
-operações aritméticas do rasterizador de triângulos e em caminhos de endereço.
-• PLLs: 2 de 6 disponíveis (33 %), correspondentes ao clock de pixel e ao clock de
-100 MHz das memórias.
-• Pinos: 241 de 457 (53 %), coerente com o uso de VGA, chaves, botões, LEDs e
-displays.
+- Lógica: cerca de 2.564 ALMs de 32.070 disponíveis (aproximadamente 8 %);
+- Registradores: cerca de 1.616 registradores dedicados;
+- Memória em bloco: cerca de 229.376 bits de 4.065.280 disponíveis (cerca de 6 %),
+implementados em 28 blocos M10K de 397 disponíveis (cerca de 7 %);
+- Blocos DSP: 24 de 87 disponíveis (cerca de 28 %), utilizados principalmente nas
+operações aritméticas do rasterizador de triângulos e em caminhos de endereço;
+- PLLs: 2 de 6 disponíveis (33 %), correspondentes ao clock de pixel e ao clock de
+100 MHz das memórias;
+- Pinos: 241 de 457 (53 %), coerente com o uso de VGA, chaves, botões, LEDs e
+displays;
 
 A utilização de lógica e de memória é confortável, deixando margem significativa para
 expansões futuras (mais sprites, segunda camada de background, interface MMIO
@@ -249,6 +253,7 @@ clk_pll_100 (100 MHz alvo). O relatório de timing estático (STA) apresenta, no
 Slow 1100 mV 85 °C, Fmax reportado na ordem de 140 MHz para o domínio de 100 MHz
 e valores muito inferiores (na faixa de poucos MHz) para o domínio associado ao clock de
 pixel em algumas seções do relatório.
+
 O domínio de 100 MHz das memórias apresenta Fmax reportado acima de 140 MHz no
 modelo lento, o que é adequado para as leituras de tilemap e padrões alinhadas ao
 pipeline gráfico.
@@ -261,6 +266,7 @@ polígonos e realiza a troca de buffer de tilemap na borda de VSYNC. A resoluç�
 320 × 240 com duplicação 2×2 atende ao requisito de saída 640 × 480. A latência do
 pipeline de background (três ciclos de pixel) é absorvida pelo alinhamento de validação de
 cor, de modo que não há bolhas visíveis na imagem.
+
 A prioridade fixa de camadas e a resolução de prioridade entre sprites permitem
 demonstrar todos os cenários de teste listados no enunciado (transparência,
 espelhamento, sobreposição, prioridade, troca de buffers e comandos inválidos), desde
@@ -269,41 +275,43 @@ que exercitados pela porta de estímulo.
 ### Gargalos identificados
 
 Os principais gargalos observados na arquitetura atual são:
-• Caminho combinacional do rasterizador de triângulos e da avaliação simultânea de
+- Caminho combinacional do rasterizador de triângulos e da avaliação simultânea de
 múltiplos sprites no mesmo ciclo de pixel, que pressiona o timing do domínio de 25
-MHz.
-• Ausência de escrita runtime completa nas memórias de tilemap e de padrões a
+MHz;
+- Ausência de escrita runtime completa nas memórias de tilemap e de padrões a
 partir da porta de estímulo (wren fixo em 0 na versão de demonstração), limitando
-a atualização dinâmica de conteúdo gráfico sem reprogramação da FPGA.
-• Paleta única compartilhada, sem sub-paletas por sprite, o que reduz flexibilidade de
-colorização independente de objetos.
-• Dependência de estímulo local (chaves/botões) em vez de uma interface MMIO
+a atualização dinâmica de conteúdo gráfico sem reprogramação da FPGA;
+- Paleta única compartilhada, sem sub-paletas por sprite, o que reduz flexibilidade de
+colorização independente de objetos;
+- Dependência de estímulo local (chaves/botões) em vez de uma interface MMIO
 real, o que é aceitável no Problema I, mas impede ainda a validação ponta a ponta
 com software no ARM.
 
 ### Limitações conhecidas
 
 Em relação ao enunciado completo do PBL01, temos listadas as seguintes limitações:
-• A atualização dinâmica de cada posição do tilemap e a carga de novos padrões em
+- A atualização dinâmica de cada posição do tilemap e a carga de novos padrões em
 runtime não estão demonstradas pela interface atual (pois memórias estão sendo
 inicializadas com arquivos .MIF), embora a estrutura de memória dual-port esteja
 preparada;
-• Seleção de paleta por sprite não está implementada de forma independente;
-• O número de polígonos simultâneos está limitado a quatro;
+- Seleção de paleta por sprite não está implementada de forma independente;
+- O número de polígonos simultâneos está limitado a quatro;
+
+
 Essas limitações não impedem a demonstração do núcleo na placa nem o atendimento ao
 núcleo dos requisitos gráficos mínimos.
 
 ### Melhorias possíveis
 
 Com base na análise de recursos e timing, as melhorias mais promissoras são:
-• Expor portas de escrita nas RAMs de tilemap e de padrões, integradas ao mapa de
+- Expor portas de escrita nas RAMs de tilemap e de padrões, integradas ao mapa de
 registradores, permitindo carga dinâmica de cena;
-• Implementar sub-paletas ou offset de índice de cor por sprite, aproximando o
+- Implementar sub-paletas ou offset de índice de cor por sprite, aproximando o
 comportamento de consoles de 16 bits clássicos;
-• Substituir a porta de estímulo por um interface MMIO mapeado no barramento do
+- Substituir a porta de estímulo por um interface MMIO mapeado no barramento do
 HPS (Cyclone V SoC), preparando o caminho para o driver Assembly e a aplicação
 C;
-• Avaliar uma segunda camada de background ou mais sprites, dado que a utilização
+- Avaliar uma segunda camada de background ou mais sprites, dado que a utilização
 atual de ALMs e memória deixa margem confortável;
 
 ### Conclusão da análise
