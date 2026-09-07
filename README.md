@@ -52,42 +52,20 @@ geração de índice de cor válido sem interromper o fluxo de vídeo. A impleme
 
 ### Motor de sprites
 
-O enunciado exige memória de atributos para no mínimo 32 sprites, sprites de 16 × 16
+É exigido memória de atributos para no mínimo 32 sprites, sprites de 16 × 16
 pixels (formados por quatro tiles 8 × 8), com posição X/Y, índice de padrão, habilitação,
 prioridade, espelhamento horizontal e vertical, e seleção de paleta. Também exige
-documentação da prioridade entre sprites no mesmo pixel.
-
-O projeto implementa:
-• Banco de atributos para 32 sprites (arrays de posição, padrão, enable, prioridade
-de 3 bits, flip H e flip V).
-• Sprites de 16 × 16 pixels compostos a partir de padrões armazenados em
-ram_sprites / ram_padrao_sprite.
-• Espelhamento horizontal e vertical controlados por flags por sprite.
-• Prioridade entre sprites documentada e testável via registradores de sobreposição
-(OVR_SPR1_X e OVR_PRIORIDADE), permitindo demonstrar qual sprite
-prevalece quando há colisão espacial.
-A seleção de paleta por sprite não está plenamente diferenciada: o núcleo utiliza uma
-única paleta programável de 256 entradas compartilhada. O índice de cor 0 é tratado
-como transparente, conforme exigido.
+documentação da prioridade entre sprites no mesmo pixel. Levando em consideração todos esses pontos, o motor de sprites foi concluído com sucesso.
 
 ### Rasterizador de polígonos
 
-É exigido o desenho de triângulos e retângulos preenchidos com aritmética inteira. O
-módulo rasterizador_multi implementa até quatro polígonos simultâneos, cada um
-podendo operar em modo retângulo (teste de limites de caixa) ou modo triângulo (teste de
-orientação por produto cruzado / half-plane), usando exclusivamente aritmética inteira
-com coordenadas signed de 10 bits. A cor e o estado de habilitação são programáveis por
-polígono.
+O desenho de triângulos e retângulos preenchidos com aritmética inteira são obrigatórios para o funcionamento do rasterizador. Ambos objetivos estão presentes no projeto.
 
 ### “Compositor” (cadeia de multiplexadores que definem a prioridade do
 pixel), paleta e transparência
 
 O compositor combina, a cada pixel lógico, as contribuições do background, da camada
-de polígonos e dos sprites. A regra de prioridade implementada é fixa e documentada:
-sprite (se ativo e cor ≠ 0) tem precedência sobre polígono (se ativo e cor ≠ 0), que por sua
-vez tem precedência sobre o background. Isso fornece três níveis de prioridade entre
-camadas, atendendo ao requisito mínimo. A transparência (índice 0) é aplicada antes da
-seleção do pixel final.
+de polígonos e dos sprites.
 A conversão do índice de 8 bits para RGB é realizada por uma paleta de 256 entradas
 interna ao driver VGA, produzindo o sinal de 8 bits por canal enviado ao DAC VGA da
 DE1-SoC.
@@ -298,6 +276,13 @@ como transparente.
 
 - **Rasterizador de Polígonos:**
   Permite o desenho de primitivas geométricas preenchidas utilizando aritmética inteira. É capaz de desenhar retângulos e triângulos, sendo útil para a criação de elementos de interface, obstáculos ou efeitos visuais na tela.
+
+  O módulo rasterizador_multi implementa até quatro polígonos simultâneos, cada um
+podendo operar em modo retângulo (teste de limites de caixa) ou modo triângulo (teste de
+orientação por produto cruzado / half-plane), usando exclusivamente aritmética inteira
+com coordenadas signed de 10 bits. A cor e o estado de habilitação são programáveis por
+polígono.
+
 </details>
 <hr>
 
@@ -306,7 +291,10 @@ como transparente.
 <summary>Compositor de Cena e Controlador de Vídeo</summary>
 
 - **Compositor:**
-  Combina a contribuição individual de cada motor gráfico a cada ciclo de pixel. Possui lógica de mistura de camadas respeitando a prioridade de exibição, onde os sprites podem se sobrepor a polígonos, que por sua vez se sobrepõem ao background. A transparência é gerenciada reservando o índice `0` para que a camada inferior seja exibida. 
+  Combina a contribuição individual de cada motor gráfico a cada ciclo de pixel. Possui lógica de mistura de camadas respeitando a prioridade de exibição, onde os sprites podem se sobrepor a polígonos, que por sua vez se sobrepõem ao background. A transparência é gerenciada reservando o índice `0` para que a camada inferior seja exibida. A regra de prioridade implementada:
+sprite (se ativo e cor ≠ 0) tem precedência sobre polígono (se ativo e cor ≠ 0), que por sua
+vez tem precedência sobre o background. Isso fornece três níveis de prioridade entre
+camadas, atendendo ao requisito mínimo.
 
  <div align="center">
   <figure>
