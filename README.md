@@ -728,7 +728,7 @@ Saída:
 
 <div align="center">
   <figure>
-    <img src="transparencia.gif" width="200px"/>
+    <img src="Docs/transparencia.gif" width="200px"/>
     <figcaption>
       <p align="center">
         <b>Figura 9</b> - Transparência do sprite
