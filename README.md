@@ -97,6 +97,125 @@ demonstração (estrutura de memória preparada);
 <details>
 <summary><h2>Estrutura proposta e decisões tomadas</h2></summary>
 
+### Visão geral da arquitetura
+
+O top-level (coprocessador.v) instancia PLLs, debouncers, a porta de estímulo, o banco
+de registradores, as memórias de tilemap e de padrões, os três motores (background,
+sprites e polígonos), o compositor e o driver VGA. A demonstração na DE1-SoC utiliza
+chaves e botões para programar registradores e exercitar os cenários de teste exigidos.
+
+### Domínios de clock e sincronização
+
+Foram adotados dois PLLs a partir do CLOCK_50 da placa:
+• meu_pll: gera o clock de pixel de 25 MHz (clk_pix) necessário para 640 × 480 a 60
+Hz.
+• pllpara100: gera um clock de 100 MHz (clk_pll_100) utilizado pelas memórias de
+padrões e tilemaps, permitindo leituras com margem de tempo no pipeline gráfico.
+O reset global combina o botão KEY[3] com os sinais de locked dos PLLs, garantindo que
+a lógica de vídeo só opere com clocks estáveis. A troca de buffer de tilemap é
+sincronizada com a borda de subida do VSYNC no domínio do pixel clock, evitando
+artefatos de tearing. Sinais de controle gerados no domínio de 50 MHz (porta de estímulo
+e banco de registradores) são consumidos pelos motores no domínio de pixel; quando
+necessário, sincronizadores de dois estágios são empregados.
+
+### Interface de comandos e banco de registradores
+
+Em vez de uma interface MMIO completa (reservada a etapas posteriores), o projeto
+implementa um banco de registradores com mapa de endereços explícito e uma porta de
+estímulo que emula escritas a partir da interface física da placa. Essa decisão atende
+simultaneamente a dois objetivos do enunciado: (i) permitir demonstração completa do
+núcleo sem o processador ARM, e (ii) manter o mapa de registradores genérico e
+documentado para futura integração.
+O mapa inclui registradores de status, scroll do background, seleção e atributos de até 32
+sprites, flags de habilitação de camadas, controle de sobreposição e prioridade entre
+sprites, pulso de troca de buffer e parâmetros de até quatro polígonos (vértices, cor, modo
+retângulo/triângulo e habilitação). Escritas em endereços inválidos são sinalizadas,
+permitindo o cenário de teste de comandos inválidos.
+
+### Memórias internas
+
+As memórias foram implementadas como blocos RAM dual-port gerados pelo Quartus (IP
+altsyncram), inicializados por arquivos MIF:
+• Duas RAMs de tilemap (A e B) de 2048 × 8 bits, permitindo double-buffering da
+cena de fundo.
+• RAM de padrões de tiles com 16384 × 8 bits (capacidade para 256 tiles de 8 × 8).
+• RAM de padrões de sprites com capacidade compatível com blocos de 16 × 16.
+• Paleta de 256 entradas RGB.
+A decisão de manter duas cópias do tilemap e de sincronizar a troca com VSYNC foi
+tomada para permitir atualização de cena sem interrupção visual, alinhada ao requisito de
+estabilidade da saída e ao cenário de teste de troca de buffers.
+
+### Motor de background
+
+O motor de background opera no domínio do clock de pixel com um pipeline de três
+estágios: (1) cálculo de coordenadas com scroll e wrapping, derivação de coluna/linha de
+tile e offset interno do tile; (2) leitura do índice de tile no tilemap e formação do endereço
+de padrão; (3) leitura do índice de cor e validação alinhada ao pipeline. O wrapping é
+realizado por subtrações condicionais de 320 e 240, evitando divisores e mantendo a
+lógica simples e inteira.
+Essa abordagem garante que, para cada pixel lógico válido, um índice de cor esteja
+disponível no momento correto, sem bolhas que interrompam o fluxo de vídeo.
+
+### Motor de sprites
+
+O motor de sprites verifica, para a coordenada lógica atual, quais dos 32 sprites estão
+habilitados e cobrem aquele pixel, aplicando espelhamento horizontal e vertical conforme
+as flags. A prioridade entre sprites que ocupam o mesmo pixel é resolvida por um campo
+de prioridade de 3 bits e, nos cenários de demonstração, por registradores de
+sobreposição dedicados que permitem forçar a ordem entre dois sprites específicos. O
+índice de cor 0 é tratado como transparente.
+Sprites de 16 × 16 são formados a partir de padrões armazenados em memória, coerente
+com a ideia de compor a imagem a partir de quatro tiles 8 × 8. A escolha de limitar a
+demonstração a 32 sprites e a um conjunto finito de padrões equilibra o requisito mínimo
+do enunciado com o uso de recursos de memória da FPGA.
+
+### Rasterizador de polígonos
+
+O rasterizador_multi avalia até quatro polígonos por pixel. No modo retângulo, utiliza
+comparações de limites; no modo triângulo, utiliza o teste clássico de orientação (produtos
+cruzados com aritmética inteira signed) para decidir se o ponto está no interior. O primeiro
+polígono que contém o pixel (na ordem de índice) determina a cor. Essa decisão privilegia
+
+simplicidade e previsibilidade em hardware, em detrimento de uma fila de prioridade mais
+elaborada entre polígonos.
+A limitação a quatro polígonos simultâneos é suficiente para demonstrar retângulos e
+triângulos preenchidos e para compor elementos de interface, atendendo ao requisito
+mínimo sem consumir excesso de lógica combinacional no caminho crítico do pixel.
+
+### Compositor e regra de prioridade
+
+O compositor implementa uma prioridade fixa e documentada entre camadas: sprite >
+polígono > background, com aplicação de transparência (cor ≠ 0) antes da seleção. Essa
+regra fornece os três níveis de prioridade exigidos e é facilmente compreensível na
+demonstração. Alternativas mais flexíveis (por exemplo, prioridade programável por
+camada) foram consideradas, mas rejeitadas nesta versão para reduzir complexidade de
+controle e de verificação.
+
+### Saída VGA
+
+O módulo vga_driver gera os sinais HSYNC, VSYNC, blank e o clock de pixel, além de
+produzir as coordenadas de varredura. A resolução lógica 320 × 240 é obtida por divisão
+por 2, e o pixel lógico é replicado espacialmente na saída 640 × 480. A conversão de
+índice para RGB é feita pela paleta antes dos pinos VGA_R/G/B.
+
+### Estratégia de demonstração e testes
+
+A porta de estímulo implementa máquinas de sequência que, a partir das chaves e
+botões, programam os registradores para exercitar transparência, espelhamento,
+sobreposição, prioridade, troca de buffers e comandos inválidos. Displays de 7 segmentos
+e LEDs fornecem feedback do cenário ativo e de condições de erro. Essa abordagem
+permite validação em hardware sem depender ainda do driver Linux.
+
+### Justificativa das principais decisões
+
+As decisões centrais foram orientadas por três critérios: (1) atender
+aos requisitos mínimos de funcionalidade gráfica com arquitetura modular; (2) manter a
+saída de vídeo estável e contínua; (3) preparar o mapa de registradores e as memórias
+para integração futura via MMIO, sem acoplar o núcleo a um jogo específico. O uso de
+estímulo local, double-buffer de tilemap sincronizado a VSYNC, pipelines curtos nos
+motores e prioridade fixa de camadas reflete o equilíbrio entre completude funcional,
+clareza de demonstração e contenção de recursos na Cyclone V.
+
 </details>
 
 <details>
@@ -124,6 +243,7 @@ mais elevado, o que é esperado dada a natureza combinacional do teste de inclus
 triângulos.
 
 ### Timing e frequências
+
 Os domínios de clock relevantes são: CLOCK_50 (base), clk_pix (25 MHz alvo) e
 clk_pll_100 (100 MHz alvo). O relatório de timing estático (STA) apresenta, no modelo
 Slow 1100 mV 85 °C, Fmax reportado na ordem de 140 MHz para o domínio de 100 MHz
@@ -134,6 +254,7 @@ modelo lento, o que é adequado para as leituras de tilemap e padrões alinhadas
 pipeline gráfico.
 
 ### Desempenho funcional
+
 Do ponto de vista funcional, o núcleo gera continuamente o quadro VGA, aplica scroll com
 wrapping, compõe até 32 sprites com transparência e espelhamento, rasteriza até quatro
 polígonos e realiza a troca de buffer de tilemap na borda de VSYNC. A resolução lógica
@@ -194,6 +315,7 @@ retângulos e triângulos, composição com transparência e prioridade, e saíd
 em 640 × 480 a partir de resolução lógica 320 × 240. Os pontos de atenção concentram-
 se na consolidação do timing do domínio de pixel, na exposição de escritas dinâmicas de
 memória e na evolução da interface de controle em direção ao MMIO.
+
 </details>
 
 </details>
