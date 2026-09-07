@@ -61,11 +61,11 @@ documentação da prioridade entre sprites no mesmo pixel. Levando em considera�
 
 O desenho de triângulos e retângulos preenchidos com aritmética inteira são obrigatórios para o funcionamento do rasterizador. Ambos objetivos estão presentes no projeto.
 
-### “Compositor” (cadeia de multiplexadores que definem a prioridade do
-pixel), paleta e transparência
+### “Compositor” (MUX de priridade), paleta e transparência
 
 O compositor combina, a cada pixel lógico, as contribuições do background, da camada
-de polígonos e dos sprites.
+de polígonos e dos sprites. A transparência (índice 0) é aplicada antes da
+seleção do pixel final.
 A conversão do índice de 8 bits para RGB é realizada por uma paleta de 256 entradas
 interna ao driver VGA, produzindo o sinal de 8 bits por canal enviado ao DAC VGA da
 DE1-SoC.
